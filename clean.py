@@ -3,6 +3,8 @@ import numpy as np
 import os
 def clean(path_determinants):
     #read data, without 3 lines of header (this is specific to quantum package output)
+    print (path_determinants)
+
     data = pd.read_csv(path_determinants, sep='\t', header=None, skiprows=2)
    #coefs = pd.read_csv(path_coefficients, sep='\t', header=None, skiprows=2)
 

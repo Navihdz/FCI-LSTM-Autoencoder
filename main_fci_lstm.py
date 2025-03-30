@@ -20,6 +20,9 @@ import bash_commands
 import time
 import os
 import multiprocessing
+import clean
+
+from joblib import Parallel, delayed
 
 
 import random
@@ -42,6 +45,7 @@ torch.manual_seed(RANDOM_SEED)
 
 #----------------------------------- Define LSTM Class-----------------------------------
 class Encoder(nn.Module):
+
   def __init__(self, seq_len, n_features, embedding_dim=64):
     super(Encoder, self).__init__()
     self.seq_len, self.n_features = seq_len, n_features
@@ -98,59 +102,16 @@ class Decoder(nn.Module):
   
 
 class RecurrentAutoencoder(nn.Module):
-    def __init__(self, seq_len,ne, n_features,embedding_dim=64):
+    def __init__(self, seq_len, n_features,embedding_dim=64):
         super(RecurrentAutoencoder, self).__init__()
         self.encoder = Encoder(seq_len, n_features, embedding_dim).to(device)
         self.decoder = Decoder(seq_len, embedding_dim, n_features).to(device)
-        self.ne=ne
-      
-    #my own function to apli to the final output of decoder
-    def electron_constriction(self, x): #use [-1,:,-1] to get the last value of the last sequence
-        x2=x[-1,:  ,-1]
-        x2=torch.abs(x2)
-        zero_vector=torch.zeros(x2.shape,dtype=torch.float32)
 
-        for i in range (self.ne//2):
-          #----------------------------constriction for even  positions (electrons in alpha orbitals)---------------------
-          random_value=torch.rand(1).to(device)
-          #cumsum of odd values
-          odd_values=torch.cumsum(x2[::2],0)
-          random_values=random_value*odd_values[-1] #random values in range of cumsum
-
-          #get the index of the closest value to the random value using argmax
-          mask=odd_values>=random_values
-          Index_where_mask_is_true = (torch.nonzero(mask, as_tuple=True)[0])*2  # is like argmax but for boolean in pytorch
-          jump=Index_where_mask_is_true[0]
-
-          x2[jump]=0  #set to 0 the prbability in x2
-          zero_vector[jump]=1 #set to 1 the position of the jump in the vector x
-
-
-          #----------------------------constriction for odd  positions (electrons in beta orbitals)---------------------
-          random_value=torch.rand(1).to(device)
-          even_values=torch.cumsum(x2[1::2],0)
-          random_values=random_value*even_values[-1] #random values in range of cumsum
-
-          #get the index of the closest value to the random value using argmax
-          mask=even_values>=random_values
-          Index_where_mask_is_true = (torch.nonzero(mask, as_tuple=True)[0])*2+1  # is like argmax but for boolean in pytorch
-          jump=Index_where_mask_is_true[0]
-
-          x2[jump]=0  #set to 0 the prbability in x2
-          zero_vector[jump]=1 #set to 1 the position of the jump in the vector x
-          
-        if torch.count_nonzero(zero_vector)!=self.ne:
-          print('error numero de electrones en vector es:',torch.count_nonzero(zero_vector))
-
-        x[-1,:,-1]=zero_vector  #set the vector with the constriction of electrons
-        #x to device cuda
-        return x.to(device)
-  
-
+        
     def forward(self, x):    
         x = self.encoder(x)
         x = self.decoder(x)
-        x=self.electron_constriction(x)
+        #x=self.electron_constriction(x)
         return x
     
 
@@ -196,36 +157,80 @@ class SGLD(torch.optim.Optimizer):
     
 
 def train_model(model, train_loader,  n_epochs,lr):
-  optimizer = torch.optim.Adam(model.parameters(), lr)
-  #optimizer ASGD
-  #optimizer = torch.optim.ASGD(model.parameters(), lr=lr, lambd=0.0001, alpha=0.75, t0=1000000.0, weight_decay=0)
-  #optimizer SGD
-  #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=0.0001)
-  #nota despues hacer prueba con SGLD
-  #optimizer = SGLD(model.parameters(), lr=lr, weight_decay=0.0001)
-  
-  criterion = nn.L1Loss(reduction='mean').to(device) #analizies MAE between prediction and target
-  history = dict(train=[], val=[])
+    #lambda_e = 1.0    # Ponderación de la penalización de la constricción electrónica
+    optimizer = torch.optim.Adam(model.parameters(), lr)#optimizer Adam
 
-  for epoch in range(1, n_epochs + 1):
-    model = model.train()
-    print(f'\rÉpoca: {epoch}', end='', flush=True)
-    train_losses = []
-    for seq_true in train_loader:
-      optimizer.zero_grad()
-      seq_true = seq_true.to(device)
-      seq_pred = model(seq_true)
-      loss = criterion(seq_pred, seq_true)
-      loss.backward()
-      optimizer.step()
-      train_losses.append(loss.item())
-    model = model.eval()
-   
-  return model.eval(), history
+    #optimizer ASGD
+    #optimizer = torch.optim.ASGD(model.parameters(), lr=lr, lambd=0.0001, alpha=0.75, t0=1000000.0, weight_decay=0)
+    #optimizer SGD
+    #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=0.0001)
+    #nota despues hacer prueba con SGLD
+    #optimizer = SGLD(model.parameters(), lr=lr, weight_decay=0.0001)
+
+    criterion = nn.L1Loss(reduction='mean').to(device) #analizies MAE between prediction and target
+    #criterion = nn.MSELoss(reduction='mean').to(device) #analizies MSE between prediction and target
+    #criterion = nn.BCELoss()    # binary cross entropy loss, ya que las salidas de decoder estan entre 0 y 1 (usamos sigmoid)
+    #criterion = nn.BCEWithLogitsLoss().to(device) # binary cross entropy loss, ya que las salidas de decoder estan entre 0 y 1 (usamos sigmoid)
+
+    losses=[]
+
+    for epoch in range(1, n_epochs + 1):
+        model = model.train()
+        print(f'\rÉpoca: {epoch}', end='', flush=True)
+        train_losses = []
+
+        for seq_true in train_loader:
+            #print('sequnce shape:',seq_true.shape)
+            
+            optimizer.zero_grad()
+            seq_true = seq_true.to(device)
+            #print(seq_true[0])
+            #print('shape de seq_true:',seq_true[0].shape)
+            seq_pred = model(seq_true)
+
+            #loss_recon = criterion(seq_pred, seq_true)
+            #loss_electrons = electron_penalty_strict(seq_pred, ne)
+            #loss = loss_recon + lambda_e * loss_electrons
+            loss = criterion(seq_pred, seq_true)
+            loss.backward()
+            optimizer.step()
+            train_losses.append(loss.item())
+      
+        losses.append(np.mean(train_losses))
+
+        if epoch % 10 == 0:
+                #print(f"Recon loss: {loss_recon.item():.4f}, Electron penalty: {loss_electrons.item():.4f}")
+                #print(f"Total loss: {loss.item():.4f}")
+                print(f"Loss:{losses[-1]:.4f}")
+
+        #losses.append(train_losses)
+    loss_plot(losses)
+        
+
+    return model.eval(),losses
+
+def loss_plot(losses):
+    '''
+        Plot the loss function
+
+        parameters:
+            - losses: list of losses
+
+        return:
+            - plot of loss function
+    '''
+    plt.figure(dpi=300)
+    plt.plot(losses)
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Loss Function")
+    print('current directory:',os.getcwd())
+    plt.savefig('graphs/loss_plot/loss_function.png', bbox_inches='tight') #esto es para que no las recorte al guardar
+    plt.close()
     
 
 
-def lstm_initialization(ezfio_path,n_mo):
+def lstm_initialization(n_mo,ne,embedding_dim):
     '''
         Initialize the rbm class
 
@@ -236,29 +241,67 @@ def lstm_initialization(ezfio_path,n_mo):
         return:
             - rbm: rbm class initialized
     '''
-    bash_commands.unzip_dets_coefs(ezfio_path)
+    #bash_commands.unzip_dets_coefs(ezfio_path)
     #x_train=get_and_clean_data(ezfio_path,prune)
     #num_visible = x_train.shape[1] 
     #num_hidden = x_train.shape[1] 
     sequence_length=n_mo
 
 
-    model = RecurrentAutoencoder(sequence_length,12, 1,64)   #seq_len,ne, n_features,embedding_dim
+
+    #model = RecurrentAutoencoder(sequence_length, 1,embedding_dim)   #seq_len,ne, n_features,embedding_dim
+    model = RecurrentAutoencoder(26, 1,64)
     lstm = model.to(device)
 
-    bash_commands.zip_dets_coefs(ezfio_path)
+    #bash_commands.zip_dets_coefs(ezfio_path)
 
     return lstm
+
+def electron_penalty_strict(output, ne):
+    """
+    Penaliza si:
+    - La suma total de electrones != ne
+    - La mitad (pares o impares) no tiene ne/2
+    Parámetros:
+        output: tensor (batch_size, n_mo, 1)
+        ne: número total de electrones
+    Devuelve:
+        penalización escalar
+    """
+    batch_size = output.shape[0]
+
+    # Elimina la última dimensión para que output sea (batch_size, n_mo)
+    output = output.squeeze(-1)
+
+    # Electrón total
+    total_e = output.sum(dim=1)  # shape: (batch_size,)
+
+    # Electrones alfa (índices pares) y beta (impares)
+    alpha_e = output[:, ::2].sum(dim=1)  # shape: (batch_size,)
+    beta_e  = output[:, 1::2].sum(dim=1)
+
+    # Targets ideales
+    ne_tensor = torch.full_like(total_e, fill_value=ne)
+    ne_half   = torch.full_like(alpha_e, fill_value=ne // 2)
+
+    # Penalizaciones
+    loss_total = F.mse_loss(total_e, ne_tensor)
+    loss_alpha = F.mse_loss(alpha_e, ne_half)
+    loss_beta  = F.mse_loss(beta_e, ne_half)
+
+    total_penalty = loss_total + loss_alpha + loss_beta
+    return total_penalty
+
 
 def saving_weights(model):
     torch.save(model.state_dict(), 'lstm_autoencoder_weights.pth')
     print('weights saved')
 
 
-def loading_weights(n_mo):
+def loading_weights_2(n_mo): #esta opcion es para cargar los pesos del decoder
     # Load the entire state_dict
     #state_dict = torch.load('recurrent_autoencoder.pth', weights_only=True)
-    state_dict = torch.load('lstm_autoencoder_weights.pth', map_location=device, weights_only=True)
+    state_dict = torch.load('lstm_autoencoder_weights.pth', map_location=device, weights_only=False)
 
     #device = torch.device("cpu")
     # Initialize the decoder
@@ -271,11 +314,46 @@ def loading_weights(n_mo):
     return decoder
 
 
+def loading_weights(n_mo, ne):  #esta opcion es para cargar los pesos del encoder y decoder
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = RecurrentAutoencoder(seq_len=n_mo, n_features=1, embedding_dim=64).to(device)
+    model.load_state_dict(torch.load('lstm_autoencoder_weights.pth', map_location=device, weights_only=False))
+    #model.eval()
+    return model
+
+def get_and_clean_data_2():
+    name='psi_det_2'
+    so_vectors=clean.clean(name)
+    so_vectors=np.array(so_vectors,dtype=np.float32)
+    #display(so_vectors[:3])
+    so_vectors=torch.tensor(so_vectors)
+    #
+    #print(so_vectors.shape)
+
+    seq_len=26
+    features=1
+    num_samples = len(so_vectors) 
+    tensor_data = so_vectors[:num_samples * seq_len]
+    print('tensor_data:',tensor_data.shape)
+    #que tipo de dato es?
+    print('tipo de dato:',tensor_data.dtype)
+    tensor_data = tensor_data.reshape((num_samples, seq_len, features))
+    indices = torch.randperm(num_samples)
+    tensor_data = tensor_data[indices]
+    train_dataset = TimeSeriesDataset(tensor_data, seq_len)
+    batch_size=64
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    return train_loader, so_vectors
+
+
+
+
 
             
 
 
-def get_and_clean_data(ezfio_path,prune, n_mo):
+def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64):
     
     '''
         Clean the qp files:
@@ -299,14 +377,60 @@ def get_and_clean_data(ezfio_path,prune, n_mo):
     features=1
     num_samples = len(so_vectors) 
     tensor_data = so_vectors[:num_samples * seq_len]
+    print('tensor_data shape:',tensor_data.shape)
+    print('tipo de dato:',tensor_data.dtype)
     tensor_data = tensor_data.reshape((num_samples, seq_len, features))
     indices = torch.randperm(num_samples)
     tensor_data = tensor_data[indices]
     train_dataset = TimeSeriesDataset(tensor_data, seq_len)
-    batch_size=64
+
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     return train_loader, x_train
+
+
+def electron_constriction_2(self, x): #use [-1,:,-1] to get the last value of the last sequence
+        x2=x[-1,:  ,-1]
+        x2=torch.abs(x2)
+        zero_vector=torch.zeros(x2.shape,dtype=torch.float32)
+        
+
+
+        for i in range (self.ne//2):
+          #----------------------------constriction for even  positions (electrons in alpha orbitals)---------------------
+          random_value=torch.rand(1).to(device)
+          #cumsum of odd values
+          odd_values=torch.cumsum(x2[::2],0)
+          random_values=random_value*odd_values[-1] #random values in range of cumsum
+
+          #get the index of the closest value to the random value using argmax
+          mask=odd_values>=random_values
+          Index_where_mask_is_true = (torch.nonzero(mask, as_tuple=True)[0])*2  # is like argmax but for boolean in pytorch
+          jump=Index_where_mask_is_true[0]
+
+          x2[jump]=0  #set to 0 the prbability in x2
+          zero_vector[jump]=1 #set to 1 the position of the jump in the vector x
+
+
+          #----------------------------constriction for odd  positions (electrons in beta orbitals)---------------------
+          random_value=torch.rand(1).to(device)
+          even_values=torch.cumsum(x2[1::2],0)
+          random_values=random_value*even_values[-1] #random values in range of cumsum
+
+          #get the index of the closest value to the random value using argmax
+          mask=even_values>=random_values
+          Index_where_mask_is_true = (torch.nonzero(mask, as_tuple=True)[0])*2+1  # is like argmax but for boolean in pytorch
+          jump=Index_where_mask_is_true[0]
+
+          x2[jump]=0  #set to 0 the prbability in x2
+          zero_vector[jump]=1 #set to 1 the position of the jump in the vector x
+          
+        if torch.count_nonzero(zero_vector)!=self.ne:
+          print('error numero de electrones en vector es:',torch.count_nonzero(zero_vector))
+
+        x[-1,:,-1]=zero_vector  #set the vector with the constriction of electrons
+        #x to device cuda
+        return x.to(device)
 
 
 
@@ -418,51 +542,50 @@ def mutate_det_with_prob(visible_probs,dets_train):
 
 
 
+
 @torch.no_grad()
-def generate_batch_dets(decoder, dets_train, batch_size, n_mo):
-    device = next(decoder.parameters()).device    # get the device of the decoder
-    random_data = torch.randn(batch_size, n_mo, 64, device=device)  
-    decoded = decoder(random_data).cpu().numpy()  # batch_size x n_mo
-    new_dets = []
+def generate_batch_probs(autoencoder, dets_train, batch_size, n_mo):
+    device = next(autoencoder.parameters()).device
 
-    for i in range(batch_size):
-        #print('el determinante generado es',decoded[i])
-        new_det = mutate_det_with_prob(decoded[i], dets_train)
-        new_dets.append(new_det)
+    indices = np.random.choice(len(dets_train), size=batch_size, replace=True)
+    input_dets = torch.tensor(dets_train[indices], dtype=torch.float32, device=device).unsqueeze(-1)
+    #print('input_dets',input_dets[:5])
 
+    decoded = autoencoder(input_dets).squeeze(-1).cpu().numpy()  # (batch_size, n_mo)
+    #print(decoded[:2])  # Convertir a 0s y 1s
+
+    #print('Terminó de generar, ahora mutando en paralelo...')
+
+    # Parallel execution (usa todos los núcleos disponibles)
+    new_dets = Parallel(n_jobs=-1)(
+        delayed(mutate_det_with_prob)(decoded[i], dets_train) for i in range(batch_size)
+    )
     return new_dets
 
 
-
-
-
-def det_generation(Decoder,dets_train,dets_list,num_dets, n_mo):
-
-
-
+def det_generation(autoencoder,dets_train,dets_list,num_dets, n_mo):
     m=0 #Counter of determinants generated
     #train_dec = [int("".join(map(str, x[::-1])), 2) for x in dets_train]
     train_dec_set = set(int("".join(map(str, x[::-1])), 2) for x in dets_train) #usar set para hacer la busqueda mas rapida (de O(n) a O(1))
 
-
-
     #set the seed for each multiprocess
     random.seed(os.getpid())
-
+    set_dets_list=set()
 
     #run until we have the number of determinants that fulfill the conditions of single and double substitutions
     while len(dets_list) < num_dets:
-        batch = generate_batch_dets(Decoder, dets_train, batch_size=1000, n_mo=n_mo)
+        batch = generate_batch_probs(autoencoder, dets_train, batch_size=10000, n_mo=n_mo)
         for det in batch:
+            #print('det shape',det.shape)
+            #print('det',det)
             det_dec = int("".join(map(str, det[::-1])), 2)
-            if det_dec not in train_dec_set:
+            if det_dec not in train_dec_set and det_dec not in set_dets_list:
                 dets_list.append(det)
-                if len(dets_list) % 1000 == 0:
-                    print('number of determinants generated', len(dets_list), end='\r')
+                set_dets_list.add(det_dec)
+                #if len(dets_list) % 1000 == 0:
+                print('number of determinants generated', len(dets_list),'of ',num_dets, end='\r')
             if len(dets_list) >= num_dets:
                 break
-
-
 
     return dets_list
 
@@ -766,8 +889,26 @@ def hamming_dist(determinantes, x_train):
 
 
 
-def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learning_rate=0.01,times_num_dets_gen=2,prune=1e-12,tol=1e-5,FCI_energy=None, times_max_diag_time=2):
+def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learning_rate=0.01,times_num_dets_gen=2,prune=1e-12,tol=1e-5,FCI_energy=None, times_max_diag_time=2,
+          batch_size=64, embedding_dim=64):
+    '''
+        Main function to run the script
+
+        parameters:
+            - working_directory: path to the working directory
+            - ezfio_path: path to the ezfio folder
+            - qpsh_path: path to the qpsh folder
+            - iterations: number of iterations to run
+            - num_epochs: number of epochs to train the rbm
+            - learning_rate: learning rate for the rbm
+            - times_num_dets_gen: number of determinants to generate
+            - prune: threshold to prune the coefficients of the determinants
+            - tol: tolerance for the convergence of the diagonalization
+            - FCI_energy: FCI energy for the system (optional)
+    '''
     n_mo=bash_commands.get_num_mo(ezfio_path)
+    ne=bash_commands.get_num_electrons(ezfio_path)
+    print('Number of electrons:',ne )
 
     print('Number of molecular orbitals(alphas + betas):',n_mo)
 
@@ -784,8 +925,8 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
     if os.path.exists('deleted_dets.txt'):
         os.remove('deleted_dets.txt')
 
-    num_nucleos = multiprocessing.cpu_count()
-    print("Number of cores available:", num_nucleos)
+    #num_nucleos = multiprocessing.cpu_count()
+    #print("Number of cores available:", num_nucleos)
 
     for iteration in range (iterations):
         print('**********************************************************')
@@ -801,7 +942,7 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
             #ground_energy_list.append(get_energy(ezfio_path,calculation='cisd'))
 
             #initialize the rbm here to not reset the weights in each iteration
-            lstm=lstm_initialization(ezfio_path,n_mo)
+            lstm=lstm_initialization(ezfio_path,n_mo,embedding_dim)
 
         
         #if is not the first iteration, use the rbm to generate new determinants and then diagonalize 
@@ -811,15 +952,15 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
 
             #get the training dataset and the number of electrons in the molecule (in binary format) and 
             # the file with the deleted determinants to avoid repeating them in the next iteration
-            DataLoader,x_train =get_and_clean_data(ezfio_path,prune, n_mo)
+            DataLoader,x_train =get_and_clean_data(ezfio_path,prune, n_mo, batch_size)
             #initialize the rbm here to reset the weights in each iteration (you need to comment the previous initialization)----------
             #rbm=rbm_initialization(ezfio_path,temp,prune)
 
-
+            lstm=lstm_initialization(ezfio_path,n_mo,embedding_dim)
             #rbm.train(x_train, num_epochs=num_epochs, batch_size=batch_size, learning_rate=learning_rate, k=k)  #train the rbm
             model_trained,_=train_model(lstm, DataLoader, num_epochs,learning_rate)     #train the lstm
             saving_weights(model_trained)
-            Decoder=loading_weights(n_mo)
+            autoencoder=loading_weights(n_mo,ne)
             
 
 
@@ -831,16 +972,16 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
             dets_list=[]
             x_train=x_train.astype(int)
 
-            determinantes=det_generation(Decoder,x_train,dets_list,num_dets_gen, n_mo)
-
-
-
+            determinantes=det_generation(autoencoder,x_train,dets_list,num_dets_gen, n_mo)
 
             print('number of determinants generated:',len(determinantes))
 
             #Validate if the new determinants, are not in the training set
             determinantes_2 = np.array(determinantes).astype(int).reshape(len(determinantes),n_mo) # reshape uusing the number of molecular orbitals
+            
+            #este ya no parece ser necesario dado que en la generacion de determinantes ya se eliminan los repetidos
             determinantes_3 = repited_determinants(determinantes_2, x_train.astype(int))
+            #determinantes_3=determinantes_2
 
 
             #hamming_distance=hamming_dist(determinantes_3, x_train)
@@ -968,6 +1109,7 @@ if __name__=='__main__':
 
     #set woking directory
     working_directory='/home/ivan/Descargas/Python_Codes_DFT/paper_code_implementation/lstm_fci'
+    os.chdir(working_directory)
     
 
 
@@ -984,7 +1126,10 @@ if __name__=='__main__':
     ezfio_name=ezfio_path.split('/')[-1]
 
     #primeras pruebas con times det num 20, max iter 10, aprox davidson 1e-10,1e-6, y 1e-8, prune 1e-8
-    max_iterations=8; num_epochs=20; learning_rate=0.0001;times_num_dets_gen=15;prune=1e-10;tol=1e-5; times_max_diag_time=10
+    max_iterations=9; num_epochs=10; learning_rate=0.0001;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
+    batch_size=64; embedding_dim=64
+
+
 
     #exanple of FCI energy for the molecule to compare the convergence
     FCI_energy=-76.12237    #h2o 6-31g
@@ -992,16 +1137,16 @@ if __name__=='__main__':
     #FCI_energy=-76.24195    #h2o ccpvdz
     #FCI_energy = -75.64418 #c2 6-31g
 
+    #n_mo=26
+    #DataLoader_1,x_train =get_and_clean_data(ezfio_path,prune, n_mo, batch_size)
+    #lstm=lstm_initialization(ezfio_path,n_mo,embedding_dim)
+            #rbm.train(x_train, num_epochs=num_epochs, batch_size=batch_size, learning_rate=learning_rate, k=k)  #train the rbm
+    #model_trained,_=train_model(lstm, DataLoader_1, num_epochs,learning_rate)     #train the lstm
 
-    import multiprocessing as mp
-    try:
-        mp.set_start_method('spawn')
-    except RuntimeError:
-        pass  # ya fue seteado, está bien
-    
+
 
     ground_energy_list,number_of_det_list,times_per_iteration_list=main(working_directory,ezfio_path,qpsh_path,max_iterations,num_epochs, learning_rate, 
-                                                                        times_num_dets_gen,prune,tol,FCI_energy,times_max_diag_time)
+                                                                        times_num_dets_gen,prune,tol,FCI_energy,times_max_diag_time, batch_size, embedding_dim)
     print('Final Ground Energy List:',ground_energy_list)
 
     Final_time = time.time()

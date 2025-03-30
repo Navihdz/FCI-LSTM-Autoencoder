@@ -237,6 +237,16 @@ def get_num_mo(ezfio_path):
 
     #acceseible molecular orbital= 2*n_mo (considering alpha and beta)
     return 2*int(n_mo)
+def get_num_electrons(ezfio_path):
+    '''
+        returns the number of electrons in the file n_elec in the determinants folder in ezfio folder
+    '''
+    dets_ezfio=ezfio_path+'/electrons/'
+    with open(dets_ezfio + 'elec_alpha_num', 'r') as file:
+        n_elec = file.read()
+
+    return 2*int(n_elec)    #considering alpha and beta electrons
+
 
 if __name__ == 'main':
     zip_dets_coefs(ezfio_path)
