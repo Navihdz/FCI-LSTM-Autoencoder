@@ -8,6 +8,7 @@
 # "Configuration Interaction Guided Sampling with Interpretable LSTM Autoencoders for Quantum Chemistry" (posible title)
 # 
 #python version: 3.10.12, recordar usar python3.10 -m pip install ***** para instalar paquetes
+#se puede seleccionar version de python en vs usando Ctrl+Shift+P y escribiendo python: select interpreter
 # ==============================================================================================
 import sys
 
@@ -23,6 +24,9 @@ import multiprocessing
 import clean
 import lstm_classic as lstm
 
+
+
+
 from joblib import Parallel, delayed
 
 
@@ -34,6 +38,9 @@ from torch.utils.data import DataLoader, Dataset
 import torch
 print('python version:',sys.version)
 print('torch version:',torch.__version__)
+import quantum_autoencoder as qautoencoder
+import jax_dataloader as jdl
+
 
 
 
@@ -118,7 +125,7 @@ def get_and_clean_data_2():
 
     
 
-def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64):
+def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False):
     
     '''
         Clean the qp files:
@@ -135,6 +142,11 @@ def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64):
     qp_folder=ezfio_path+'/determinants/'
     x_train=clean_data_qp.clean(qp_folder+'psi_det', qp_folder+'psi_coef',prune)
     x_train=np.array(x_train,dtype=np.float32)  #no entiendo porque se convierte a float32, pero sino da error si le pasas int64
+
+    if quantum:
+        train_data=jdl.ArrayDataset(x_train, x_train) #uno es el input y el otro es el target, pero como son iguales no importa
+        train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=16,shuffle=True,drop_last=True)
+        return train_loader, x_train
 
     #convert the training dataset to a pytorch tensor
     so_vectors=torch.tensor(x_train)
@@ -245,31 +257,55 @@ def mutate_det_with_prob(visible_probs,dets_train):
 
 
 @torch.no_grad()
-def generate_batch_probs(autoencoder, dets_train, batch_size, n_mo):
-    device = next(autoencoder.parameters()).device
-    indices = np.random.choice(len(dets_train), size=batch_size, replace=True)
-    input_dets = torch.tensor(dets_train[indices], dtype=torch.float32, device=device).unsqueeze(-1)
-    decoded = autoencoder(input_dets).squeeze(-1).cpu().numpy()  # (batch_size, n_mo)
+def generate_batch_probs(autoencoder, dets_train, batch_size, n_mo, quantum=False):
+    if quantum==False:
+        device = next(autoencoder.parameters()).device
+        indices = np.random.choice(len(dets_train), size=batch_size, replace=True)
+        input_dets = torch.tensor(dets_train[indices], dtype=torch.float32, device=device).unsqueeze(-1)
+        output_probs = autoencoder(input_dets).squeeze(-1).cpu().numpy()  # (batch_size, n_mo)
 
+    else:
+        indices = np.random.choice(len(dets_train), size=batch_size, replace=True)
+        input_dets = np.array(dets_train[indices], dtype=np.float32)
+        model, params = qautoencoder.load_model(n_mo)
+        output_probs = model.apply(params,input_dets)
+        #output_probs = jax.device_get(output_probs)
+        output_probs = np.array(output_probs)
+
+    #print('output_probs shape:',output_probs[0].shape)
+    
 
     # Parallel execution (usa todos los núcleos disponibles)
     new_dets = Parallel(n_jobs=-1)(
-        delayed(mutate_det_with_prob)(decoded[i], dets_train) for i in range(batch_size)
+        delayed(mutate_det_with_prob)(output_probs[i], dets_train) for i in range(batch_size)
     )
-    return new_dets
+    #from joblib import Parallel, delayed
+    #import threading
+    #print("JAX activo:", threading.active_count())
+
+        
+
+    #print('new_dets shape:',np.array(new_dets).shape)
+    #print('new_dets:',np.array(new_dets)[0])
+    #print('new_dets:',np.array(new_dets)[-1])
+
+    return new_dets, output_probs
 
 
-def det_generation(autoencoder,dets_train,dets_list,num_dets, n_mo):
+def det_generation(autoencoder,dets_train,dets_list,num_dets, n_mo, quantum=False):
     m=0 #Counter of determinants generated
     train_dec_set = set(int("".join(map(str, x[::-1])), 2) for x in dets_train) #usar set para hacer la busqueda mas rapida (de O(n) a O(1))
 
     #set the seed for each multiprocess
     random.seed(os.getpid())
     set_dets_list=set()
-
+    tester_counter=0
     #run until we have the number of determinants that fulfill the conditions of single and double substitutions
     while len(dets_list) < num_dets:
-        batch = generate_batch_probs(autoencoder, dets_train, batch_size=10000, n_mo=n_mo)
+        batch,output_probs = generate_batch_probs(autoencoder, dets_train, batch_size=10000, n_mo=n_mo, quantum=quantum)
+        if tester_counter==0:
+            print('output_probs:',output_probs[0])
+        tester_counter+=1
         for det in batch:
             #print('det shape',det.shape)
             #print('det',det)
@@ -665,30 +701,45 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
 
             #initialize the rbm here to not reset the weights in each iteration
             #model=lstm.lstm_initialization(n_mo,embedding_dim)
-
+    
         
         #if is not the first iteration, use the rbm to generate new determinants and then diagonalize 
         else:
             init_time=time.time()
             bash_commands.unzip_dets_coefs(ezfio_path) #unzip the files psi_coef and psi_det in the determinants of the ezfio folder
 
-            #get the training dataset and the number of electrons in the molecule (in binary format) and 
-            # the file with the deleted determinants to avoid repeating them in the next iteration
-            DataLoader,x_train =get_and_clean_data(ezfio_path,prune, n_mo, batch_size)
+            quantum=True
 
-            #initialize the rbm here to reset the weights in each iteration (you need to comment the previous initialization)----------
-            model=lstm.lstm_initialization(n_mo,embedding_dim)
-            #rbm.train(x_train, num_epochs=num_epochs, batch_size=batch_size, learning_rate=learning_rate, k=k)  #train the rbm
-            model_trained,losses=lstm.train_model(model, DataLoader, num_epochs,learning_rate)     #train the lstm
-            loss_plot(losses) #plot the loss function
-            lstm.saving_weights(model_trained)
-            autoencoder=lstm.loading_weights(n_mo,ne)
+            if quantum:
+                DataLoader,x_train =get_and_clean_data(ezfio_path,prune, n_mo, batch_size, quantum=True)
+                model,params,dropoutkey=qautoencoder.qae_initialization(n_mo)  #quantum lstm
+                model_trained,params, losses=qautoencoder.train_model(model,params, dropoutkey, DataLoader, num_epochs,learning_rate)  #quantum lstm
+                loss_plot(losses) #plot the loss function
+                qautoencoder.save_model(model_trained,params)
+                model,params=qautoencoder.load_model(n_mo)  #quantum lstm
+                #autoencoder = model.apply(params, x_train, train=False, rngs={'dropout': jax.random.PRNGKey(0)})
+                autoencoder = model.apply(params, x_train, train=False)
+
+            
+            else:
+
+                #get the training dataset and the number of electrons in the molecule (in binary format) and 
+                #convert the training dataset to a pytorch tensor
+                DataLoader,x_train =get_and_clean_data(ezfio_path,prune, n_mo, batch_size) #classical lstm
+                # the file with the deleted determinants to avoid repeating them in the next iteration
+                #initialize the rbm here to reset the weights in each iteration (you need to comment the previous initialization)----------
+                model=lstm.lstm_initialization(n_mo,embedding_dim)     #classical lstm
+                model_trained,losses=lstm.train_model(model, DataLoader, num_epochs,learning_rate)     #classical lstm
+                lstm.save_model(model_trained)
+                autoencoder=lstm.load_model(n_mo,ne)
+            
+            
             
 
             num_dets_gen=times_num_dets_gen*len(x_train)  #number of determinants to generate
             dets_list=[]
             x_train=x_train.astype(int)
-            determinantes=det_generation(autoencoder,x_train,dets_list,num_dets_gen, n_mo)
+            determinantes=det_generation(autoencoder,x_train,dets_list,num_dets_gen, n_mo, quantum)
             print('number of determinants generated:',len(determinantes))
 
 
@@ -817,7 +868,7 @@ if __name__=='__main__':
     ezfio_name=ezfio_path.split('/')[-1]
 
     #primeras pruebas con times det num 20, max iter 10, aprox davidson 1e-10,1e-6, y 1e-8, prune 1e-8
-    max_iterations=4; num_epochs=10; learning_rate=0.0001;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
+    max_iterations=4; num_epochs=2; learning_rate=0.00005;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
     batch_size=64; embedding_dim=64
 
 
@@ -834,7 +885,7 @@ if __name__=='__main__':
             #rbm.train(x_train, num_epochs=num_epochs, batch_size=batch_size, learning_rate=learning_rate, k=k)  #train the rbm
     #model_trained,_=train_model(lstm, DataLoader_1, num_epochs,learning_rate)     #train the lstm
 
-
+    
 
     ground_energy_list,number_of_det_list,times_per_iteration_list=main(working_directory,ezfio_path,qpsh_path,max_iterations,num_epochs, learning_rate, 
                                                                         times_num_dets_gen,prune,tol,FCI_energy,times_max_diag_time, batch_size, embedding_dim)
