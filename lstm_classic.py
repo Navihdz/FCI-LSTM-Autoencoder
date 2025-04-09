@@ -128,7 +128,7 @@ def train_model(model, train_loader,  n_epochs,lr):
 
     for epoch in range(1, n_epochs + 1):
         model = model.train()
-        print(f'\rÉpoca: {epoch}', end='', flush=True)
+        print(f'\rÉpoca: {epoch} ', end='', flush=True)
         train_losses = []
 
         for seq_true in train_loader:
@@ -155,31 +155,11 @@ def train_model(model, train_loader,  n_epochs,lr):
                 #print(f"Total loss: {loss.item():.4f}")
                 print(f"Loss:{losses[-1]:.4f}")
 
-        #losses.append(train_losses)
-    loss_plot(losses)
-        
 
     return model.eval(),losses
 
 
-def loss_plot(losses):
-    '''
-        Plot the loss function
 
-        parameters:
-            - losses: list of losses
-
-        return:
-            - plot of loss function
-    '''
-    plt.figure(dpi=300)
-    plt.plot(losses)
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Loss Function")
-    print('current directory:',os.getcwd())
-    plt.savefig('graphs/loss_plot/loss_function.png', bbox_inches='tight') #esto es para que no las recorte al guardar
-    plt.close()
 
 
 def electron_penalty_strict(output, ne):
@@ -218,11 +198,11 @@ def electron_penalty_strict(output, ne):
     return total_penalty
 
 
-def saving_weights(model):
+def save_model(model):
     torch.save(model.state_dict(), 'lstm_autoencoder_weights.pth')
     print('weights saved')
 
-def loading_weights(n_mo, ne):  #esta opcion es para cargar los pesos del encoder y decoder
+def load_model(n_mo, ne):  #esta opcion es para cargar los pesos del encoder y decoder
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = RecurrentAutoencoder(seq_len=n_mo, n_features=1, embedding_dim=64).to(device)
     model.load_state_dict(torch.load('lstm_autoencoder_weights.pth', map_location=device, weights_only=False))
@@ -233,8 +213,8 @@ if __name__ == "__main__":
 
     lstm_initialization(n_mo,embedding_dim)
     train_model(model, train_loader, n_epochs, lr)
-    saving_weights(model)
-    loading_weights(n_mo, ne)
+    save_model(model)
+    load_model(n_mo, ne)
 
 
     
