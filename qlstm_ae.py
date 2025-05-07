@@ -25,6 +25,12 @@ class qlstm_autoencoder(nn.Module):
         self.weightsu=self.param('weightsu',nn.initializers.xavier_uniform(),(self.n_qlayers, self.n_qubits))
         
         self.weightso=self.param('weightso',nn.initializers.xavier_uniform(),(self.n_qlayers, self.n_qubits))
+        self.linear_f = nn.Dense(self.hidden_size)
+        self.linear_i = nn.Dense(self.hidden_size)
+        self.linear_u = nn.Dense(self.hidden_size)
+        self.linear_o = nn.Dense(self.hidden_size)
+        self.to_qubits = nn.Dense(self.n_qubits)
+
         #self.weightsf=self.param('weightsf',nn.initializers.normal(),(self.n_qlayers, self.n_qubits))
         #self.weightsi=self.param('weightsi',nn.initializers.normal(),(self.n_qlayers, self.n_qubits))
         #self.weightsu=self.param('weightsu',nn.initializers.normal(),(self.n_qlayers, self.n_qubits))
@@ -48,7 +54,7 @@ class qlstm_autoencoder(nn.Module):
         '''
        
         hidden_seq = []
-        batch_size=16
+        batch_size=x.shape[0]
         
         h_t = jnp.zeros((batch_size, self.hidden_size))  # hidden state (output)
         c_t = jnp.zeros((batch_size, self.hidden_size)) # cell state
@@ -58,35 +64,14 @@ class qlstm_autoencoder(nn.Module):
             x_t = x[:, t, :] #x has shape (batch,seq_len,features)
             # Concatenate input and hidden state
             v_t = jnp.concatenate((h_t, x_t), axis=1)
-            #print('el shape de vt',v_t.shape)
-            # match qubit dimension
-            y_t = nn.Dense(self.n_qubits)(v_t) #Dense gives an output of n_qubits
-            #print('el shape de yt',y_t.shape)
-            f_t=self.qnode(y_t,self.weightsf)
-            f_t=jnp.asarray(f_t)
-            f_t = nn.sigmoid(f_t)  # forget block
-            #print('el shape de ft antes del dense',f_t.shape)
-            f_t=jnp.transpose(f_t)
-            f_t=nn.Dense(self.hidden_size)(f_t)
-            #print('el shape de f_t',f_t.shape)
-            i_t = self.qnode(y_t,self.weightsi)  # input block
-            i_t=jnp.asarray(i_t)
-            i_t=nn.sigmoid(i_t)
-            i_t=jnp.transpose(i_t)
-            i_t=nn.Dense(self.hidden_size)(i_t)
-            #print('el shape de i_t',i_t.shape)
-            g_t = self.qnode(y_t,self.weightsu) # update block
-            g_t=jnp.asarray(g_t)
-            g_t=jnp.tanh(g_t)
-            g_t=jnp.transpose(g_t)
-            g_t=nn.Dense(self.hidden_size)(g_t)
-            #print('el shape de g_t',g_t.shape)
-            o_t = self.qnode(y_t,self.weightso)# output block
             
-            o_t=jnp.asarray(o_t)
-            o_t=nn.sigmoid(o_t)
-            o_t=jnp.transpose(o_t)
-            o_t=nn.Dense(self.hidden_size)(o_t)
+            # match qubit dimension
+            y_t = self.to_qubits(v_t)
+            #print('el shape de yt',y_t.shape
+            f_t = self.linear_f(nn.sigmoid(jnp.array(self.qnode(y_t, self.weightsf)).T))
+            i_t = self.linear_i(nn.sigmoid(jnp.array(self.qnode(y_t, self.weightsi)).T))#self.qnode(y_t,self.weightsi)  # input block
+            g_t = self.linear_u(jnp.tanh(jnp.array(self.qnode(y_t, self.weightsu)).T))#self.qnode(y_t,self.weightsg) # update block
+            o_t =self.linear_o(nn.sigmoid(jnp.array(self.qnode(y_t, self.weightso)).T)) #self.qnode(y_t,self.weightso)# output block
             c_t = (f_t * c_t) + (i_t * g_t)
             h_t = o_t * nn.tanh(c_t) #it has size (batch_size, hidden)
             hidden_seq.append(jnp.expand_dims(h_t, axis=0))#we will end with a number of sequences of the size of the window of time 
@@ -101,37 +86,67 @@ class qlstm_autoencoder(nn.Module):
     
     @nn.compact
     def __call__(self, x):
+        
         out=self.qlstm_layer(x,self.hidden_size)
         #expand_dims to match the input shape
         out=jnp.expand_dims(out, axis=-1)
         out=self.qlstm_layer(out,self.hidden_size)
         target=nn.Dense(self.seq_lenght)(out)
         target=jnp.expand_dims(target, axis=-1)
+        
         return target
     
-def qlstm_initialization(input_size:int):
+def qlstm_initialization(input_size:int,n_qubits,hidden_size):
     """Initialize the QLSTM Autoencoder model and optimizer."""
     n_qlayers=1
-    n_qubits=6
-    hidden_size=64
+    n_qubits=2
+    hidden_size=16
     target_size=1
     
     model = qlstm_autoencoder(input_size,n_qlayers, n_qubits, hidden_size, target_size)
     rng = jax.random.PRNGKey(0)
-    dummy_input = jnp.ones((16, input_size,1)) #input must be (batch,seq_len,features)
+    dummy_input = jnp.ones((1, input_size,1)) #input must be (batch,seq_len,features)
     params = model.init(rng, dummy_input)
-    return model, params
+
+    optimizer=optax.adam(0.01)
+    opt_state = optimizer.init(params)
+    train_step = create_train_step(model, optimizer)
+    return model, params, train_step
+
+
+def create_train_step(net, optimizer):
+    @jax.jit
+    def train_step(params, opt_state, inputs, targets):
+        def loss_fn(params, inputs, targets):
+            preds = net.apply(params, inputs)
+            loss = jnp.mean((preds - targets) ** 2)
+            return loss
+        loss, grad = jax.value_and_grad(loss_fn)(params, inputs, targets)
+        updates, opt_state = optimizer.update(grad, opt_state)
+        new_params = optax.apply_updates(params, updates)
+        return loss, new_params, opt_state
+    return train_step
+
+
+
     
 
-def train_model(input_size,train_loader,test_loader,batch,epochs):
+def train_model(net, params,train_step,train_loader,epochs,lr=0.01):
     """Train the Quantum Autoencoder model."""
-    
-    net,params=qlstm_initialization(input_size)
-    optimizer=optax.adam(0.01)
+    print("Training the QLSTM Autoencoder...")
+    #net,params=qlstm_initialization(input_size)
+    print("Model initialized")
+    optimizer=optax.adam(lr)
     opt_state=optimizer.init(params)
-    
+
+    #train_step = create_train_step(net, optimizer)
+
+    print("Optimizer initialized")
+
+    '''
     @jax.jit
     def train_step(params,opt_state,inputs,targets):
+        print('train step')
         def loss_fn(params,inputs,targets):
             preds=net.apply(params,inputs)
             loss = loss = jnp.mean((preds - targets) ** 2)
@@ -142,10 +157,15 @@ def train_model(input_size,train_loader,test_loader,batch,epochs):
         updates, opt_state=optimizer.update(grad,opt_state)
         new_params=optax.apply_updates(params,updates)
         return loss, new_params, opt_state
+    '''
+    
     for epoch in range(epochs):
         epoch_loss = 0.0
         for data in train_loader:
+            
             inputs, targets = data[0], data[1]
+            #print('el shape',inputs.shape,targets.shape)
+            #loss, params, opt_state = train_step(params, opt_state, inputs, targets)
             loss, params, opt_state = train_step(params, opt_state, inputs, targets)
             epoch_loss += loss
         epoch_loss /= len(train_loader)
@@ -153,22 +173,36 @@ def train_model(input_size,train_loader,test_loader,batch,epochs):
         print(f"Epoch {epoch}, Loss: {epoch_loss}")
     
 
-
+    save_model(net, params, save_path="model_params.pkl")
     return net,params
 
 def save_model(model, params, save_path="model_params.pkl"):
-    """Save the model parameters to a file."""
+    """Save both model configuration and parameters."""
+    to_save = {
+        "params": params,
+        "config": {
+            "seq_lenght": model.seq_lenght,
+            "n_qlayers": model.n_qlayers,
+            "n_qubits": model.n_qubits,
+            "hidden_size": model.hidden_size,
+            "target_size": model.target_size
+        }
+    }
     with open(save_path, "wb") as f:
-        pickle.dump(params, f)
+        pickle.dump(to_save, f)
     print(f"Model parameters saved to {save_path}")
-
 def load_model(model_class, input_shape, param_path="model_params.pkl"):
-
-
-    net = model_class(input_size=input_shape[1])
     with open(param_path, "rb") as f:
-        params = pickle.load(f)
+        loaded = pickle.load(f)
+    params = loaded["params"]
+    config = loaded["config"]
+
+    net = model_class(
+        seq_lenght=config["seq_lenght"],
+        n_qlayers=config["n_qlayers"],
+        n_qubits=config["n_qubits"],
+        hidden_size=config["hidden_size"],
+        target_size=config["target_size"]
+    )
     print(f"Pesos cargados desde {param_path}")
     return net, params
-
-        

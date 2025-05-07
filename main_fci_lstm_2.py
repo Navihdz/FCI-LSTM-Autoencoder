@@ -23,10 +23,10 @@ import os
 import multiprocessing
 import clean
 import lstm_classic as lstm
-import qlstm_ae as qlstm
-
-
-
+import jax.numpy as jnp
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'  # no preasignes toda la memoria de GPU
+#os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.3'
+#XLA_PYTHON_CLIENT_PREALLOCATE=False
 
 from joblib import Parallel, delayed
 
@@ -35,12 +35,19 @@ import random
 from torch import nn, optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
-
+import os
+#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.5"
+import multiprocessing as mp
+from multiprocessing import Process,Queue
 import torch
 print('python version:',sys.version)
 print('torch version:',torch.__version__)
 import quantum_autoencoder as qautoencoder
+from qlstm_ae import train_model, qlstm_initialization
+from multiprocessing.pool import ThreadPool
 import jax_dataloader as jdl
+import gc
+import jax
 
 
 
@@ -95,38 +102,12 @@ class SGLD(torch.optim.Optimizer):
 
 
 
-def get_and_clean_data_2():
-    name='psi_det_2'
-    so_vectors=clean.clean(name)
-    so_vectors=np.array(so_vectors,dtype=np.float32)
-    #display(so_vectors[:3])
-    so_vectors=torch.tensor(so_vectors)
-    #
-    #print(so_vectors.shape)
-
-    seq_len=26
-    features=1
-    num_samples = len(so_vectors) 
-    tensor_data = so_vectors[:num_samples * seq_len]
-    print('tensor_data:',tensor_data.shape)
-    #que tipo de dato es?
-    print('tipo de dato:',tensor_data.dtype)
-    tensor_data = tensor_data.reshape((num_samples, seq_len, features))
-    indices = torch.randperm(num_samples)
-    tensor_data = tensor_data[indices]
-    train_dataset = TimeSeriesDataset(tensor_data, seq_len)
-    batch_size=64
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-    return train_loader, so_vectors
-
-
 
 
 
     
 
-def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False):
+def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False,qlstm=False):
     
     '''
         Clean the qp files:
@@ -143,11 +124,19 @@ def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False):
     qp_folder=ezfio_path+'/determinants/'
     x_train=clean_data_qp.clean(qp_folder+'psi_det', qp_folder+'psi_coef',prune)
     x_train=np.array(x_train,dtype=np.float32)  #no entiendo porque se convierte a float32, pero sino da error si le pasas int64
-    #x_train=np.expand_dims(x_train, axis=-1) #expand the last dimension to make it (batch_size, n_mo, 1)
     if quantum:
-        train_data=jdl.ArrayDataset(x_train, x_train) #uno es el input y el otro es el target, pero como son iguales no importa
-        train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=16,shuffle=True,drop_last=True)
-        return train_loader, x_train
+         if x_train.ndim == 2:
+            train_data=jdl.ArrayDataset(x_train, x_train) #uno es el input y el otro es el target, pero como son iguales no importa
+            train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=4,shuffle=True,drop_last=True)
+            return train_loader, x_train
+
+    if qlstm:
+         if x_train.ndim == 2:
+            x_train2 = np.expand_dims(x_train, axis=-1)
+            print("Shape after expand_dims:", x_train.shape) 
+            train_data=jdl.ArrayDataset(x_train2, x_train2) #uno es el input y el otro es el target, pero como son iguales no importa
+            train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=batch_size,shuffle=True,drop_last=True)
+            return train_loader, x_train
 
     #convert the training dataset to a pytorch tensor
     so_vectors=torch.tensor(x_train)
@@ -170,87 +159,74 @@ def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False):
 
 
 
-def mutate_det_with_prob(visible_probs,dets_train):
-    exitations=0
-    random_exitation= np.random.randint(1)
-    if random_exitation>0.5:
-        exitations=1
-    else:
-        exitations=2
+def mutate_det_with_prob(visible_probs, dets_train):
+    import random
+    import numpy as np
+    import jax.numpy as jnp
 
-    #print('numero de excitaciones',exitations)
-    #print('entro3')
+    excitations = 2 if np.random.rand() <= 0.5 else 1
 
-    random_number_det=np.random.randint(len(dets_train))
-    det=dets_train[random_number_det]   #choose a random determinant from the training set
-    #print('Tensor 1',det)
-    #print('entro4')
+    random_number_det = np.random.randint(len(dets_train))
+    det = dets_train[random_number_det]
+    occupied_orbitals = np.where(det == 1)[0]
+    unoccupied_orbitals = np.where(det == 0)[0]
 
-    #position of the occupied and unoccupied orbitals
-    occupied_orbitals=np.where(det==1)[0]
-    unoccupied_orbitals=np.where(det==0)[0]
-    #print('entro5')
-
-    # Extraer las probabilidades visibles de los orbitals ocupados y desocupados
-    occupied_probs = visible_probs[occupied_orbitals]  # Probabilidades de los orbitals ocupados
-    unoccupied_probs = visible_probs[unoccupied_orbitals]  # Probabilidades de los orbitals desocupados
-    #print('entro6')
-
-    # Calcular las probabilidades condicionales de los saltos de ocupados a desocupados
-    # Esto es equivalente a: (1 - P(ocupado)) * P(desocupado)
-    jumps = (1 - occupied_probs[:, np.newaxis]) * unoccupied_probs[np.newaxis, :]   #np.newaxis expande las dimensiones de los arrays para que se puedan multiplicar
+    # Probabilidades de salto
+    occupied_probs = visible_probs[occupied_orbitals]
+    unoccupied_probs = visible_probs[unoccupied_orbitals]
     jumps = (1 - occupied_probs[:, None]) * unoccupied_probs[None, :]
-    jumps=jumps.reshape(len(occupied_orbitals),len(unoccupied_orbitals))
+    jumps = jumps.reshape(len(occupied_orbitals), len(unoccupied_orbitals))
 
+    # Determinar si estamos usando JAX
+    use_jax = isinstance(jumps, jnp.ndarray)
 
-    #sample the jumps
-    new_det = det.copy() #copy the determinant to change it
-    saved_jumps=[]
+    new_det = det.copy()
+    saved_jumps = []
 
-    for i in range(exitations):
-        c=0 #acumulative sum of probabilities
-        #p=np.random.random()*np.sum(jumps) #random number between 0 and the sum of all the probabilities in the jumps matrix
-        p=random.random()*np.sum(jumps) #creo que funciona mejor en el paralelismo
-        
-        found_change=False
+    for _ in range(excitations):
+        p = random.random() * (jnp.sum(jumps) if use_jax else np.sum(jumps))
+        c = 0.0
+        found_change = False
 
         for j in range(len(occupied_orbitals)):
             for k in range(len(unoccupied_orbitals)):
-                c+=jumps[j][k]
-                if p<=c and jumps[j][k]!=0: 
-                    if (occupied_orbitals[j]%2==0 and unoccupied_orbitals[k]%2==0) or (occupied_orbitals[j]%2!=0 and unoccupied_orbitals[k]%2!=0):
-                        new_det[occupied_orbitals[j]]=0
-                        new_det[unoccupied_orbitals[k]]=1
-                        jumps[j]=0
-                        jumps[:,k]=0
-                        found_change=True
-                        saved_jumps.append([occupied_orbitals[j],unoccupied_orbitals[k]])
-                        
-                        break
+                c += jumps[j, k]
+                if p <= c and jumps[j, k] != 0:
+                    if (occupied_orbitals[j] % 2) == (unoccupied_orbitals[k] % 2):
+                        new_det[occupied_orbitals[j]] = 0
+                        new_det[unoccupied_orbitals[k]] = 1
 
+                        if use_jax:
+                            jumps = jumps.at[j].set(0)
+                            jumps = jumps.at[:, k].set(0)
+                        else:
+                            jumps[j] = 0
+                            jumps[:, k] = 0
+
+                        saved_jumps.append([occupied_orbitals[j], unoccupied_orbitals[k]])
+                        found_change = True
+                        break
             if found_change:
                 break
-        if not found_change:
-            #this occurs when the random number is one of the last probabilities, and happens that the probabilities are zero because the orbitals were changed
-            #or we cannot change the determinant because the orbitals have diferent spins in the last probabilities.
-            #In this case we choose the last probabilities that satisfy the condition of the spins of the orbitals and the probabilities are not zero due to previous changes
 
-            #find the last probabilities that satisfy the comented conditions
-            for j in range(len(occupied_orbitals)-1,-1,-1):
-                for k in range(len(unoccupied_orbitals)-1,-1,-1):
-                    if jumps[j][k]!=0:
-                        if (occupied_orbitals[j]%2==0 and unoccupied_orbitals[k]%2==0) or (occupied_orbitals[j]%2!=0 and unoccupied_orbitals[k]%2!=0):
-                            #change the determinant
-                            new_det[occupied_orbitals[j]]=0
-                            new_det[unoccupied_orbitals[k]]=1
-                            #change the probabilities for this orbitals to 0, to avoid to choose them again
-                            jumps[j]=0
-                            jumps[:,k]=0
-                            found_change=True
-                            break
+        if not found_change:
+            for j in range(len(occupied_orbitals) - 1, -1, -1):
+                for k in range(len(unoccupied_orbitals) - 1, -1, -1):
+                    if jumps[j, k] != 0 and (occupied_orbitals[j] % 2) == (unoccupied_orbitals[k] % 2):
+                        new_det[occupied_orbitals[j]] = 0
+                        new_det[unoccupied_orbitals[k]] = 1
+
+                        if use_jax:
+                            jumps = jumps.at[j].set(0)
+                            jumps = jumps.at[:, k].set(0)
+                        else:
+                            jumps[j] = 0
+                            jumps[:, k] = 0
+
+                        found_change = True
+                        break
                 if found_change:
                     break
-            continue
 
     return new_det
 
@@ -258,26 +234,48 @@ def mutate_det_with_prob(visible_probs,dets_train):
 
 
 @torch.no_grad()
-def generate_batch_probs(autoencoder, dets_train, batch_size, n_mo, quantum=False):
-    if quantum==False:
+def generate_batch_probs(autoencoder,params, dets_train, batch_size, n_mo,classical=False, quantum=False,qlstm=True):
+    if classical==True:
+        print('predicting with classical lstm')
         device = next(autoencoder.parameters()).device
         indices = np.random.choice(len(dets_train), size=batch_size, replace=True)
         input_dets = torch.tensor(dets_train[indices], dtype=torch.float32, device=device).unsqueeze(-1)
         output_probs = autoencoder(input_dets).squeeze(-1).cpu().numpy()  # (batch_size, n_mo)
+        new_dets = Parallel(n_jobs=-1)(
+        delayed(mutate_det_with_prob)(output_probs[i], dets_train) for i in range(batch_size))
+    elif qlstm==True:
+        print('predicting with qlstm')
+        #jax.clear_backends() 
+        #model_name = qlstm_autoencoder
+        indices = np.random.choice(len(dets_train), size=batch_size, replace=True)
+        input_dets = jnp.array(dets_train[indices], dtype=np.float32)
+        input_dets=jnp.expand_dims(input_dets, axis=-1)
+        #input_shape = input_dets.shape
+        #model, params = load_model(model_name, input_shape=input_shape)
+        output_probs = autoencoder.apply(params, input_dets)
+        output_probs = np.array(output_probs)
+        new_dets = Parallel(n_jobs=-1)(
+        delayed(mutate_det_with_prob)(output_probs[i], dets_train) for i in range(batch_size))
+        #gc.collect()
+        #jax.clear_caches()
 
     else:
+        print('predicting with dummy version of quantum')
         indices = np.random.choice(len(dets_train), size=batch_size, replace=True)
         input_dets = np.array(dets_train[indices], dtype=np.float32)
         model, params = qautoencoder.load_model(n_mo)
+
         output_probs = model.apply(params,input_dets)
         #output_probs = jax.device_get(output_probs)
         output_probs = np.array(output_probs)
+        new_dets = Parallel(n_jobs=-1)(
+        delayed(mutate_det_with_prob)(output_probs[i], dets_train) for i in range(batch_size))
 
     #print('output_probs shape:',output_probs[0].shape)
     
 
     # Parallel execution (usa todos los núcleos disponibles)
-    new_dets = Parallel(n_jobs=-1)(
+        new_dets = Parallel(n_jobs=-1)(
         delayed(mutate_det_with_prob)(output_probs[i], dets_train) for i in range(batch_size)
     )
     #from joblib import Parallel, delayed
@@ -293,23 +291,19 @@ def generate_batch_probs(autoencoder, dets_train, batch_size, n_mo, quantum=Fals
     return new_dets, output_probs
 
 
-def det_generation(autoencoder,dets_train,dets_list,num_dets, n_mo, quantum=False):
+def det_generation(autoencoder,params,dets_train,dets_list,num_dets, n_mo, quantum=False,qlstm=True):
     m=0 #Counter of determinants generated
     train_dec_set = set(int("".join(map(str, x[::-1])), 2) for x in dets_train) #usar set para hacer la busqueda mas rapida (de O(n) a O(1))
 
     #set the seed for each multiprocess
     random.seed(os.getpid())
     set_dets_list=set()
-    tester_counter=0
+
     #run until we have the number of determinants that fulfill the conditions of single and double substitutions
+    batch_size=num_dets//3
     while len(dets_list) < num_dets:
-        batch,output_probs = generate_batch_probs(autoencoder, dets_train, batch_size=10000, n_mo=n_mo, quantum=quantum)
-        if tester_counter==0:
-            print('output_probs:',output_probs[0])
-        tester_counter+=1
-        for det in batch:
-            #print('det shape',det.shape)
-            #print('det',det)
+        new_det_batch,output_probs = generate_batch_probs(autoencoder,params, dets_train, batch_size=batch_size, n_mo=n_mo, quantum=quantum,qlstm=qlstm)
+        for det in new_det_batch:
             det_dec = int("".join(map(str, det[::-1])), 2)
             if det_dec not in train_dec_set and det_dec not in set_dets_list:
                 dets_list.append(det)
@@ -423,6 +417,7 @@ def get_energy(ezfio_path,calculation='cisd'):
             - energy: ground energy
     '''
     output_file=ezfio_path+'/determinants/qp.out'
+    print('output file:',output_file)
     with open(output_file) as f:
         lines = f.readlines()
 
@@ -645,11 +640,14 @@ def save_outputs(ground_energy_list, number_of_det_list, times_per_iteration_lis
     with open('ouput_files/'+ezfio_name+'_times_per_iteration_list.txt', 'w') as f:
         for item in times_per_iteration_list:
             f.write("%s\n" % item)
-
+def run_training(DataLoader, n_mo, q):
+    #DataLoader, x_train = get_and_clean_data(ezfio_path, prune, n_mo, batch_size, qlstm=True)
+    trained_model, losses = train_model(n_mo, DataLoader, epochs=10)
+    #q.put("done")  # puedes enviar confirmación (no el modelo directamente si pesa mucho)
 
 
 def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learning_rate=0.01,times_num_dets_gen=2, 
-         prune=1e-12,tol=1e-5,FCI_energy=None, times_max_diag_time=2, batch_size=64, embedding_dim=64):
+         prune=1e-12,tol=1e-5,FCI_energy=None, times_max_diag_time=2, batch_size=64, embedding_dim=16, n_qubits=2):
     '''
         Main function to run the script
 
@@ -680,6 +678,8 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
     print('The selected ezfio_path is :',ezfio_path)
     ezfio_name=ezfio_path.split('/')[-1]
 
+    print("current qpsh path:",qpsh_path)
+
     #delete the deleted_dets.txt file if exists, this file is used to store the determinants that are removed from the training set
     if os.path.exists('deleted_dets.txt'):
         os.remove('deleted_dets.txt')
@@ -696,12 +696,20 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
         if iteration==0:
             bash_commands.reset_ezfio(qpsh_path,ezfio_path)
             bash_commands.scf(qpsh_path,ezfio_path)
-            #ground_energy_list.append(get_energy(ezfio_path,calculation='scf'))
+            ground_energy_list.append(get_energy(ezfio_path,calculation='scf'))
             bash_commands.cisd(qpsh_path,ezfio_path)
-            #ground_energy_list.append(get_energy(ezfio_path,calculation='cisd'))
+            ground_energy_list.append(get_energy(ezfio_path,calculation='cisd'))
 
             #initialize the rbm here to not reset the weights in each iteration
-            model=lstm.lstm_initialization(n_mo,embedding_dim)
+            #model=lstm.lstm_initialization(n_mo,embedding_dim)
+
+            #vamos a inicializar el modelo de lstm cuantico
+            jax.clear_caches()
+            gc.collect()
+            bash_commands.unzip_dets_coefs(ezfio_path)
+            DataLoader, x_train = get_and_clean_data(ezfio_path, prune, n_mo, batch_size, qlstm=True)
+            autoencoder,params,train_step=qlstm_initialization(n_mo, n_qubits,embedding_dim)
+            print('model initialized')
     
         
         #if is not the first iteration, use the rbm to generate new determinants and then diagonalize 
@@ -709,27 +717,47 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
             init_time=time.time()
             bash_commands.unzip_dets_coefs(ezfio_path) #unzip the files psi_coef and psi_det in the determinants of the ezfio folder
 
-            quantum=True
+            quantum=False
+            qlstm=True
 
-            
             if quantum:
+                print('predicting with quantum autoencoder')
+                jax.clear_caches()
                 DataLoader,x_train =get_and_clean_data(ezfio_path,prune, n_mo, batch_size, quantum=True)
-                model,params,dropoutkey=qautoencoder.qae_initialization(n_mo)  #quantum lstm
+                model,params,dropoutkey=qautoencoder.qae_initialization(n_mo)  #quantum encoder decoder
                 model_trained,params, losses=qautoencoder.train_model(model,params, dropoutkey, DataLoader, num_epochs,learning_rate)  #quantum lstm
                 loss_plot(losses) #plot the loss function
                 qautoencoder.save_model(model_trained,params)
                 model,params=qautoencoder.load_model(n_mo)  #quantum lstm
                 #autoencoder = model.apply(params, x_train, train=False, rngs={'dropout': jax.random.PRNGKey(0)})
-                autoencoder = model.apply(params, x_train, train=False)
+                autoencoder = model.apply(params, x_train)
+            elif qlstm:
+                print('predicting with qlstm')
+                DataLoader, x_train = get_and_clean_data(ezfio_path, prune, n_mo, batch_size, qlstm=True)
+                #mp.set_start_method("spawn", force=True)
+                #jax.clear_caches()
+                #gc.collect()
                 '''
-            if quantum: 
-                DataLoader,x_train =get_and_clean_data(ezfio_path,prune, n_mo, batch_size, quantum=True)
-                model_trained,params, losses=qlstm.train_model(n_mo, DataLoader, num_epochs,learning_rate)
-                loss_plot(losses) #plot the loss function
-                qlstm.save_model(params)
-                model,params=qlstm.load_model(n_mo)  #quantum lstm
-                autoencoder = model.apply(params, x_train, train=False)
-                '''  
+                q = Queue()
+                print('creando el proceso')
+                p = Process(target=run_training, args=(DataLoader, n_mo, q))
+                p.start()
+                result = q.get()  # espera el "done"
+                p.join()
+                '''
+                
+                autoencoder, params = train_model(autoencoder, params,train_step, DataLoader, epochs=num_epochs, lr=learning_rate)
+
+
+                print('proceso terminado')
+                # luego cargas el modelo ya entrenado
+                
+                del DataLoader
+                #del losses
+                #gc.collect()
+                #model_class = qlstm_autoencoder
+                #autoencoder, params = load_model(model_class, input_shape=n_mo)
+                
 
             
             else:
@@ -739,7 +767,7 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
                 DataLoader,x_train =get_and_clean_data(ezfio_path,prune, n_mo, batch_size) #classical lstm
                 # the file with the deleted determinants to avoid repeating them in the next iteration
                 #initialize the rbm here to reset the weights in each iteration (you need to comment the previous initialization)----------
-                #model=lstm.lstm_initialization(n_mo,embedding_dim)     #classical lstm
+                model=lstm.lstm_initialization(n_mo,embedding_dim)     #classical lstm
                 model_trained,losses=lstm.train_model(model, DataLoader, num_epochs,learning_rate)     #classical lstm
                 lstm.save_model(model_trained)
                 autoencoder=lstm.load_model(n_mo,ne)
@@ -750,7 +778,7 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
             num_dets_gen=times_num_dets_gen*len(x_train)  #number of determinants to generate
             dets_list=[]
             x_train=x_train.astype(int)
-            determinantes=det_generation(autoencoder,x_train,dets_list,num_dets_gen, n_mo, quantum)
+            determinantes=det_generation(autoencoder,params,x_train,dets_list,num_dets_gen, n_mo, quantum)
             print('number of determinants generated:',len(determinantes))
 
 
@@ -863,6 +891,8 @@ if __name__=='__main__':
     ##------------------------------------------------------------------------------------------------
     #set woking directory
     working_directory='/home/ivan/Descargas/Python_Codes_DFT/paper_code_implementation/lstm_fci'
+    #working_directory='/home/sandra-juarez/Documentos/Doctorado/fci-autoencoder/FCI-LSTM-Autoencoder'
+
     os.chdir(working_directory)
     
 
@@ -870,17 +900,24 @@ if __name__=='__main__':
 
     #path to the ezfio folder for the molecule------------------------
     #ezfio_path='/home/ivan/Descargas/solving_fci/to_diagonalize.ezfio' #c2 ccpvdz
-    ezfio_path='/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio'   #h2o 6-31g
+    ezfio_path='/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio' #h2o 6-31g
+    #ezfio_path='/home/sandra-juarez/Documentos/Doctorado/fci-autoencoder/FCI-LSTM-Autoencoder/QP_examples/h2o/h2o_631g.ezfio' #/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio'   #h2o 6-31g
     #ezfio_path='/home/ivan/Descargas/QP_examples/h2o/h2o_ccpvdz.ezfio'   #h2o ccpvdz
     #ezfio_path='/home/ivan/Descargas/QP_examples/c2/c2_631g.ezfio' #c2 6-31g
 
     #path to the Quantum Package qpsh---------------------------------
-    qpsh_path='/home/ivan/Descargas/qp2/bin/qpsh'
+    #qpsh_path='/home/sandra-juarez/qp2/bin/qpsh'
+    qpsh_path='/home/ivan/Descargas/qp2/bin/qpsh' #/home/sandra-juarez/qp2/bin/qpsh
     ezfio_name=ezfio_path.split('/')[-1]
 
     #primeras pruebas con times det num 20, max iter 10, aprox davidson 1e-10,1e-6, y 1e-8, prune 1e-8
-    max_iterations=4; num_epochs=2; learning_rate=0.00005;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
-    batch_size=128; embedding_dim=64
+    max_iterations=4; num_epochs=2; learning_rate=0.001;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
+    batch_size=128; embedding_dim=16; n_qubits=4
+
+    #parametros que funcionaron bien en primera prueba qlstm
+    #max_iterations=4; num_epochs=10; learning_rate=0.01;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
+    #batch_size=64; embedding_dim=16; n_qubits=2
+
 
 
 
