@@ -96,11 +96,10 @@ class qlstm_autoencoder(nn.Module):
         
         return target
     
-def qlstm_initialization(input_size:int,n_qubits,hidden_size):
+def qlstm_initialization(input_size:int,n_qubits,hidden_size,lr):
     """Initialize the QLSTM Autoencoder model and optimizer."""
     n_qlayers=1
-    n_qubits=2
-    hidden_size=16
+    
     target_size=1
     
     model = qlstm_autoencoder(input_size,n_qlayers, n_qubits, hidden_size, target_size)
@@ -108,7 +107,7 @@ def qlstm_initialization(input_size:int,n_qubits,hidden_size):
     dummy_input = jnp.ones((1, input_size,1)) #input must be (batch,seq_len,features)
     params = model.init(rng, dummy_input)
 
-    optimizer=optax.adam(0.01)
+    optimizer=optax.adam(lr)
     opt_state = optimizer.init(params)
     train_step = create_train_step(model, optimizer)
     return model, params, train_step

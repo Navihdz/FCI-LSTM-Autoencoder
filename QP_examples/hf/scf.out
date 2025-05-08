@@ -1,0 +1,91 @@
+Date: 06/09/2023 17:20:47
+===============
+Quantum Package
+===============
+
+Git Commit: Improve thread-safety
+Git Date  : Wed May 10 15:18:07 2023 +0200
+Git SHA1  : 25577131dde13e1395bc378eea888bc6154ce341
+EZFIO Dir : hf.ezfio
+
+
+Task server running : tcp://127.0.1.1:41279
+* mo_num                                                        11
+ Read  mo_coef
+
+.. >>>>> [ RES  MEM :          0.003 GB ] [ VIRT MEM :          0.801 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.01  s ] [ CPU  TIME:           0.81  s ] <<<<< ..
+
+
+Nuclear Coordinates (Angstroms)
+===============================
+
+================ ============ ============ ============ ============
+      Atom          Charge          X            Y            Z 
+================ ============ ============ ============ ============
+H                    1.000000     0.000000     0.000000     0.000000
+F                    9.000000     0.000000     0.000000     1.100000
+================ ============ ============ ============ ============
+
+Minimal interatomic distance found:       1.1000 Angstrom
+ AO map initialized :                  2211
+ Providing the AO integrals
+ Sorting the map
+ AO integrals provided:
+  Size of AO map :            6.8416595458984375E-003 MB
+  Number of AO integrals :                  677
+  cpu  time :  0.17187500000000000      s
+  wall time :   5.8015699999941717E-002 s  ( x    2.9625601345872354       )
+
+.. >>>>> [ RES  MEM :          0.006 GB ] [ VIRT MEM :          1.020 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.16  s ] [ CPU  TIME:           1.77  s ] <<<<< ..
+
+* Nuclear repulsion energy                           4.329631723673536    
+ * mo_label          Canonical
+ Read mo_occ
+
+.. >>>>> [ RES  MEM :          0.006 GB ] [ VIRT MEM :          1.020 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.16  s ] [ CPU  TIME:           1.77  s ] <<<<< ..
+
+ Energy of the guess =   -99.959321165243821     
+==== ================ ================ ================ ================
+  N          Energy      Energy diff       DIIS error     Level shift   
+==== ================ ================ ================ ================
+   1   -99.9593211652    -0.0000000000     0.0000005521     0.0000000000   1
+.. >>>>> [ IO READ: mo_class ] <<<<< ..
+==== ================ ================ ================ ================
+
+
+.. >>>>> [ RES  MEM :          0.006 GB ] [ VIRT MEM :          1.020 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.27  s ] [ CPU  TIME:           2.27  s ] <<<<< ..
+
+MOs are now **Canonical**
+
+Eigenvalues
+-----------
+
+======== ================
+       1   -26.2817089479
+       2    -1.5370717227
+       3    -0.6732267463
+       4    -0.6174668112
+       5    -0.6174668112
+       6     0.1499865574
+       7     0.9564327455
+       8     1.4981490734
+       9     1.4981490734
+      10     1.6280149956
+      11     1.9626930888
+======== ================
+
+
+.. >>>>> [ RES  MEM :          0.006 GB ] [ VIRT MEM :          1.020 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.27  s ] [ CPU  TIME:           2.27  s ] <<<<< ..
+
+* SCF energy                                        -99.95932116524430    
+
+.. >>>>> [ RES  MEM :          0.006 GB ] [ VIRT MEM :          1.020 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.42  s ] [ CPU  TIME:           2.75  s ] <<<<< ..
+
+Wall time: 0:00:02
+

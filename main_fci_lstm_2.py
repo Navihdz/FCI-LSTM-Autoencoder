@@ -55,6 +55,7 @@ import jax
 
 #----------------------------------- Set the random seed for reproducibility-----------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+random.seed(0)
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
@@ -127,7 +128,7 @@ def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False,qlst
     if quantum:
          if x_train.ndim == 2:
             train_data=jdl.ArrayDataset(x_train, x_train) #uno es el input y el otro es el target, pero como son iguales no importa
-            train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=4,shuffle=True,drop_last=True)
+            train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=4,shuffle=False,drop_last=True)
             return train_loader, x_train
 
     if qlstm:
@@ -135,7 +136,7 @@ def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False,qlst
             x_train2 = np.expand_dims(x_train, axis=-1)
             print("Shape after expand_dims:", x_train.shape) 
             train_data=jdl.ArrayDataset(x_train2, x_train2) #uno es el input y el otro es el target, pero como son iguales no importa
-            train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=batch_size,shuffle=True,drop_last=True)
+            train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=batch_size,shuffle=False,drop_last=True)
             return train_loader, x_train
 
     #convert the training dataset to a pytorch tensor
@@ -708,7 +709,7 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
             gc.collect()
             bash_commands.unzip_dets_coefs(ezfio_path)
             DataLoader, x_train = get_and_clean_data(ezfio_path, prune, n_mo, batch_size, qlstm=True)
-            autoencoder,params,train_step=qlstm_initialization(n_mo, n_qubits,embedding_dim)
+            autoencoder,params,train_step=qlstm_initialization(n_mo, n_qubits,embedding_dim,learning_rate)
             print('model initialized')
     
         
@@ -890,8 +891,8 @@ if __name__=='__main__':
     ##-----------------------------------examples to test the code-----------------------------------
     ##------------------------------------------------------------------------------------------------
     #set woking directory
-    working_directory='/home/ivan/Descargas/Python_Codes_DFT/paper_code_implementation/lstm_fci'
-    #working_directory='/home/sandra-juarez/Documentos/Doctorado/fci-autoencoder/FCI-LSTM-Autoencoder'
+    #working_directory='/home/ivan/Descargas/Python_Codes_DFT/paper_code_implementation/lstm_fci'
+    working_directory='/home/sandra-juarez/Documentos/Doctorado/fci-autoencoder/FCI-LSTM-Autoencoder'
 
     os.chdir(working_directory)
     
@@ -900,18 +901,19 @@ if __name__=='__main__':
 
     #path to the ezfio folder for the molecule------------------------
     #ezfio_path='/home/ivan/Descargas/solving_fci/to_diagonalize.ezfio' #c2 ccpvdz
-    ezfio_path='/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio' #h2o 6-31g
-    #ezfio_path='/home/sandra-juarez/Documentos/Doctorado/fci-autoencoder/FCI-LSTM-Autoencoder/QP_examples/h2o/h2o_631g.ezfio' #/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio'   #h2o 6-31g
+    # ezfio_path='/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio' #h2o 6-31g
+    ezfio_path='/home/sandra-juarez/Documentos/Doctorado/fci-autoencoder/FCI-LSTM-Autoencoder/QP_examples/h2o/h2o_631g.ezfio' #/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio'   #h2o 6-31g
     #ezfio_path='/home/ivan/Descargas/QP_examples/h2o/h2o_ccpvdz.ezfio'   #h2o ccpvdz
     #ezfio_path='/home/ivan/Descargas/QP_examples/c2/c2_631g.ezfio' #c2 6-31g
 
     #path to the Quantum Package qpsh---------------------------------
     #qpsh_path='/home/sandra-juarez/qp2/bin/qpsh'
-    qpsh_path='/home/ivan/Descargas/qp2/bin/qpsh' #/home/sandra-juarez/qp2/bin/qpsh
+    #qpsh_path='/home/ivan/Descargas/qp2/bin/qpsh' 
+    qpsh_path='/home/sandra-juarez/qp2/bin/qpsh'
     ezfio_name=ezfio_path.split('/')[-1]
 
     #primeras pruebas con times det num 20, max iter 10, aprox davidson 1e-10,1e-6, y 1e-8, prune 1e-8
-    max_iterations=4; num_epochs=2; learning_rate=0.001;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
+    max_iterations=2; num_epochs=2; learning_rate=0.001;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
     batch_size=128; embedding_dim=16; n_qubits=4
 
     #parametros que funcionaron bien en primera prueba qlstm
@@ -936,7 +938,7 @@ if __name__=='__main__':
     
 
     ground_energy_list,number_of_det_list,times_per_iteration_list=main(working_directory,ezfio_path,qpsh_path,max_iterations,num_epochs, learning_rate, 
-                                                                        times_num_dets_gen,prune,tol,FCI_energy,times_max_diag_time, batch_size, embedding_dim)
+                                                                        times_num_dets_gen,prune,tol,FCI_energy,times_max_diag_time, batch_size, embedding_dim,n_qubits)
     print('Final Ground Energy List:',ground_energy_list)
 
     Final_time = time.time()

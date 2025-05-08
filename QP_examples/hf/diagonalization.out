@@ -1,0 +1,80 @@
+Date: 27/09/2023 21:57:40
+===============
+Quantum Package
+===============
+
+Git Commit: Improve thread-safety
+Git Date  : Wed May 10 15:18:07 2023 +0200
+Git SHA1  : 25577131dde13e1395bc378eea888bc6154ce341
+EZFIO Dir : hf.ezfio
+
+
+Task server running : tcp://127.0.1.1:41279
+ * mo_label          Canonical
+* Number of determinants                                       569
+* Dimension of the psi arrays                                  569
+ Read psi_coef         569           1
+* mo_num                                                        11
+* N_int                                                          1
+ Read  mo_coef
+ Read psi_det
+ MO map initialized:                  2211
+.. >>>>> [ IO READ: mo_class ] <<<<< ..
+ AO map initialized :                  2211
+ Providing the AO integrals
+
+.. >>>>> [ RES  MEM :          0.005 GB ] [ VIRT MEM :          1.445 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.00  s ] [ CPU  TIME:           1.22  s ] <<<<< ..
+
+
+Nuclear Coordinates (Angstroms)
+===============================
+
+================ ============ ============ ============ ============
+      Atom          Charge          X            Y            Z 
+================ ============ ============ ============ ============
+H                    1.000000     0.000000     0.000000     0.000000
+F                    9.000000     0.000000     0.000000     1.100000
+================ ============ ============ ============ ============
+
+Minimal interatomic distance found:       1.1000 Angstrom
+ Sorting the map
+ AO integrals provided:
+  Size of AO map :            6.8416595458984375E-003 MB
+  Number of AO integrals :                  677
+  cpu  time :  0.56250000000000000      s
+  wall time :   9.8673299999973096E-002 s  ( x    5.7006302616832860       )
+ 
+ AO -> MO integrals transformation
+ ---------------------------------
+ 
+* Target maximum memory (GB)                                  2000
+ Getting AOs
+ 1st transformation
+ 2nd transformation
+ 3rd transformation
+ 4th transformation
+ Molecular integrals provided:
+  Size of MO map              5.1511764526367188E-002 MB
+  Number of MO integrals:                  2053
+  cpu  time :  0.32812500000000000      s
+  wall time :   3.2810800000333984E-002 s  ( x    10.000518121979958      )
+ Providing the one-electron integrals
+ Providing the H_matrix_all_dets ...
+ H_matrix_all_dets done 
+ Diagonalization of H using Lapack
+
+.. >>>>> [ RES  MEM :          0.044 GB ] [ VIRT MEM :          3.343 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.49  s ] [ CPU  TIME:           3.11  s ] <<<<< ..
+
+* Nuclear repulsion energy                           4.329631723673536    
+
+.. >>>>> [ RES  MEM :          0.044 GB ] [ VIRT MEM :          3.343 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.49  s ] [ CPU  TIME:           3.11  s ] <<<<< ..
+
+* Energy of state    1                              -100.0954565386470    
+* S^2 of state    1                                -0.6281275422830849E-18
+ N_det =          569
+* Saved determinants                                           569
+Wall time: 0:00:03
+

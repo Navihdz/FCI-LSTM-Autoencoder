@@ -1,0 +1,14 @@
+{
+   "scf": [
+   {
+   "iteration":          1,
+   "energy": -0.760267681409709E+02,
+   "delta_energy_SCF": -0.468958205601666E-12,
+   "max_error_DIIS":  0.649446450748211E-06,
+   "level_shift":  0.000000000000000E+00,
+   "dim_DIIS":          1,
+   "saved": true,
+   "converged": true
+   }
+   ]
+}

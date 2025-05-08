@@ -1,0 +1,110 @@
+Date: 09/04/2025 16:34:45
+===============
+Quantum Package
+===============
+
+Git Commit: Dev stable
+Git Date  : Wed Nov 8 17:28:59 2023 +0100
+Git SHA1  : 0f320db735bfdbdf9861c9cad9f3f64175cc8c3c
+EZFIO Dir : /home/ivan/Descargas/QP_examples/n2/n2_631g.ezfio/../n2_631g.ezfio
+
+
+Task server running : tcp://127.0.1.1:40069
+ * mo_label          Canonical
+* Number of determinants                                     33209
+* Dimension of the psi arrays                                33209
+ Read psi_coef       33209           1
+* mo_num                                                        18
+* N_int                                                          1
+ Read  mo_coef
+ Read psi_det
+ MO map initialized:                 14706
+.. >>>>> [ IO READ: mo_class ] <<<<< ..
+ AO map initialized :                 14706
+ Providing the AO integrals
+
+.. >>>>> [ RES  MEM :          0.012 GB ] [ VIRT MEM :          1.627 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.14  s ] [ CPU  TIME:           1.37  s ] <<<<< ..
+
+
+Nuclear Coordinates (Angstroms)
+===============================
+
+================ ============ ============ ============ ============
+      Atom          Charge          X            Y            Z 
+================ ============ ============ ============ ============
+N                    7.000000     0.000000     0.000000     0.538700
+N                    7.000000     0.000000     0.000000    -0.538700
+================ ============ ============ ============ ============
+
+Minimal interatomic distance found:       1.0774 Angstrom
+ Sorting the map
+ AO integrals provided:
+  Size of AO map :            5.1511764526367188E-002 MB
+  Number of AO integrals :                 4350
+  cpu  time :  0.36699300000000012      s
+  wall time :   5.1463818999991418E-002 s  ( x    7.1310875704747314       )
+ 
+ AO -> MO integrals transformation
+ ---------------------------------
+ 
+* Total available memory (GB)                                   54
+* Target maximum memory (GB)                                    54
+ Getting AOs
+ 1st transformation
+ 2nd transformation
+ 3rd transformation
+ 4th transformation
+ Molecular integrals provided:
+  Size of MO map             0.26050949096679688      MB
+  Number of MO integrals:                 10327
+  cpu  time :  0.30857699999999988      s
+  wall time :   3.2558329999801572E-002 s  ( x    9.4776666985647147      )
+ Providing the one-electron integrals
+* Number of unique alpha determinants                         3176
+* Number of unique beta determinants                          2793
+
+.. >>>>> [ RES  MEM :          0.023 GB ] [ VIRT MEM :          3.520 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.23  s ] [ CPU  TIME:           2.09  s ] <<<<< ..
+
+* Nuclear repulsion energy                           24.06690488480536    
+
+.. >>>>> [ RES  MEM :          0.024 GB ] [ VIRT MEM :          3.521 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           0.25  s ] [ CPU  TIME:           2.26  s ] <<<<< ..
+
+
+Davidson Diagonalization
+------------------------
+
+* Number of states                                               1
+* Number of states in diagonalization                            4
+* Number of determinants                                     33209
+* Number of threads for diagonalization                         12
+* Memory(Gb)                                        0.4794450476765633E-01
+
+===== ================ =========== =========== 
+Iter       Energy          S^2       Residual  
+===== ================ =========== =========== 
+   0   -109.0769845321    0.000711   9.682E-04
+   1   -109.0797196484    0.001786   5.794E-05
+   2   -109.0797820338    0.001855   5.640E-06
+   3   -109.0797866300    0.001874   2.498E-07
+   4   -109.0797869540    0.001880   7.182E-09
+   5   -109.0797869677    0.001881   3.949E-10
+   6   -109.0797869684    0.001881   1.845E-11
+====== ================ =========== ===========
+
+
+.. >>>>> [ RES  MEM :          0.057 GB ] [ VIRT MEM :          3.566 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           1.50  s ] [ CPU  TIME:          13.62  s ] <<<<< ..
+
+
+.. >>>>> [ RES  MEM :          0.030 GB ] [ VIRT MEM :          3.526 GB ] <<<<< ..
+.. >>>>> [ WALL TIME:           1.50  s ] [ CPU  TIME:          13.64  s ] <<<<< ..
+
+* Energy of state    1                              -109.0797869683774    
+* S^2 of state    1                                 0.1880680830926263E-02
+ N_det =        33209
+* Saved determinants                                         33209
+Wall time: 0:00:03
+
