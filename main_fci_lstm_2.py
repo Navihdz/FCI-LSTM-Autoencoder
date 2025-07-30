@@ -14,15 +14,17 @@ import sys
 
 
 import numpy as np
-import modules.clean_data_qp
-import format_to_qp
+from modules.clean_data_qp import clean 
+#import clean_data_qp
+#import format_to_qp
+from modules.format_to_qp import formatting2qp
 import matplotlib.pyplot as plt
-import bash_commands
+import modules.bash_commands as bash_commands
 import time
 import os
 import multiprocessing
-import clean
-import lstm_classic as lstm
+#import clean
+import modules.lstm_classic as lstm
 import jax.numpy as jnp
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'  # no preasignes toda la memoria de GPU
 #os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.3'
@@ -42,7 +44,7 @@ from multiprocessing import Process,Queue
 import torch
 print('python version:',sys.version)
 print('torch version:',torch.__version__)
-import quantum_autoencoder as qautoencoder
+import modules.quantum_autoencoder_amplitude as qautoencoder
 from qlstm_ae import train_model, qlstm_initialization
 from multiprocessing.pool import ThreadPool
 import jax_dataloader as jdl
@@ -105,12 +107,6 @@ class SGLD(torch.optim.Optimizer):
 
 
 
-
-
-
-
-    
-
 def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False,qlstm=False):
     
     '''
@@ -125,9 +121,10 @@ def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False,qlst
             - create the file with the deleted determinants to avoid repeating them in the next iteration
     '''
 
-    qp_folder=ezfio_path+'/determinants/'
+    
+    qp_folder=os.joinpath(ezfio_path,'determinants')
 
-    x_train=clean_data_qp.clean(qp_folder+'psi_det', qp_folder+'psi_coef',prune)
+    x_train=clean(qp_folder+'psi_det', qp_folder+'psi_coef',prune)
     x_train=np.array(x_train,dtype=np.float32)  #no entiendo porque se convierte a float32, pero sino da error si le pasas int64
     if quantum:
          if x_train.ndim == 2:
@@ -150,13 +147,10 @@ def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False,qlst
     features=1
     num_samples = len(so_vectors) 
     tensor_data = so_vectors[:num_samples * seq_len]
-    print('tensor_data shape:',tensor_data.shape)
-    print('tipo de dato:',tensor_data.dtype)
     tensor_data = tensor_data.reshape((num_samples, seq_len, features))
     indices = torch.randperm(num_samples)
     tensor_data = tensor_data[indices]
     train_dataset = TimeSeriesDataset(tensor_data, seq_len)
-
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     return train_loader, x_train
@@ -168,7 +162,6 @@ def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False,qlst
 def mutate_det_with_prob(visible_probs, dets_train):
 
     excitations = 2 if np.random.rand() <= 0.5 else 1
-
     random_number_det = np.random.randint(len(dets_train))
     det = dets_train[random_number_det]
     occupied_orbitals = np.where(det == 1)[0]
@@ -269,12 +262,9 @@ def generate_batch_probs(autoencoder,params, dets_train, batch_size, n_mo,classi
         model, params = qautoencoder.load_model(n_mo)
 
         output_probs = model.apply(params,input_dets)
-        #output_probs = jax.device_get(output_probs)
         output_probs = np.array(output_probs)
         new_dets = Parallel(n_jobs=-1)(
         delayed(mutate_det_with_prob)(output_probs[i], dets_train) for i in range(batch_size))
-
-    #print('output_probs shape:',output_probs[0].shape)
     
 
     # Parallel execution (usa todos los núcleos disponibles)
@@ -812,7 +802,7 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
 
             #convert the new determinants to qp format and add them to the qp files
             determinantes_3_toqp=np.fliplr(determinantes_3.astype(int))  #format_to_qp function needs the determinants in reverse order ex from 110000 to 000011 to a correct conversion to decimal               
-            format_to_qp.formatting2qp(determinantes_3_toqp,ezfio_path)
+            formatting2qp(determinantes_3_toqp,ezfio_path)
 
             number_of_det_list.append(len(new_dets))
 
@@ -920,10 +910,21 @@ if __name__=='__main__':
     #ezfio_path='/home/ivan/Descargas/QP_examples/n2/n2_631g.ezfio' #n2 6-31g
     #ezfio_path='/home/ivan/Descargas/QP_examples/n2/n2_ccpvdz.ezfio' #n2 ccpvdz
 
+
+    #nuevos paths
+    ezfio_path='QP_examples/h2o/h2o_631g.ezfio' #h2o 6-31g
+    #ezfio_path='QP_examples/h2o/h2o_ccpvdz.ezfio' #h2o ccpvdz
+    #ezfio_path='QP_examples/c2/c2_631g.ezfio' #c2 6-31g
+    #ezfio_path='QP_examples/c2/c2_ccpvdz.ezfio' #c2 ccpvdz
+    #ezfio_path='QP_examples/n2/n2_631g.ezfio' #n2 6-31g
+    #ezfio_path='QP_examples/n2/n2_ccpvdz.ezfio' #n2 ccpvdz
+
+
+
     #path to the Quantum Package qpsh---------------------------------
     #qpsh_path='/home/sandra-juarez/qp2/bin/qpsh'
     qpsh_path='/home/ivan/Descargas/qp2/bin/qpsh' 
-    #qpsh_path='/home/sandra-juarez/qp2/bin/qpsh'
+
     ezfio_name=ezfio_path.split('/')[-1]
 
     #primeras pruebas con times det num 20, max iter 10, aprox davidson 1e-10,1e-6, y 1e-8, prune 1e-8

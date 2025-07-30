@@ -199,13 +199,13 @@ def electron_penalty_strict(output, ne):
 
 
 def save_model(model):
-    torch.save(model.state_dict(), 'lstm_autoencoder_weights.pth')
+    torch.save(model.state_dict(), 'weights/lstm_autoencoder_weights.pth')
     print('weights saved')
 
 def load_model(n_mo, ne):  #esta opcion es para cargar los pesos del encoder y decoder
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = RecurrentAutoencoder(seq_len=n_mo, n_features=1, embedding_dim=64).to(device)
-    model.load_state_dict(torch.load('lstm_autoencoder_weights.pth', map_location=device, weights_only=False))
+    model.load_state_dict(torch.load('weights/lstm_autoencoder_weights.pth', map_location=device, weights_only=False))
     #model.eval()
     return model
 
