@@ -14,7 +14,7 @@ import sys
 
 
 import numpy as np
-import clean_data_qp
+import modules.clean_data_qp
 import format_to_qp
 import matplotlib.pyplot as plt
 import bash_commands
@@ -889,6 +889,9 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
             
     print('number of determinants in each iteration:',number_of_det_list)
     print('time per iteration:',times_per_iteration_list)
+    print('Final Ground Energy List:',ground_energy_list)
+    Final_time = time.time()
+    print('Total execution time:',Final_time-Initial_time)
     return ground_energy_list,number_of_det_list,times_per_iteration_list
 
     
@@ -924,7 +927,7 @@ if __name__=='__main__':
     ezfio_name=ezfio_path.split('/')[-1]
 
     #primeras pruebas con times det num 20, max iter 10, aprox davidson 1e-10,1e-6, y 1e-8, prune 1e-8
-    max_iterations=4; num_epochs=1; learning_rate=0.0005;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
+    max_iterations=2; num_epochs=1; learning_rate=0.0005;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
     batch_size=64; embedding_dim=8; n_qubits=2
 
     #parametros que funcionaron bien en primera prueba qlstm
@@ -952,10 +955,9 @@ if __name__=='__main__':
 
     ground_energy_list,number_of_det_list,times_per_iteration_list=main(working_directory,ezfio_path,qpsh_path,max_iterations,num_epochs, learning_rate, 
                                                                         times_num_dets_gen,prune,tol,FCI_energy,times_max_diag_time, batch_size, embedding_dim,n_qubits)
-    print('Final Ground Energy List:',ground_energy_list)
+    
 
-    Final_time = time.time()
-    print('Total execution time:',Final_time-Initial_time)
+    
 
 
     

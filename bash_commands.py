@@ -7,7 +7,8 @@ def zip_dets_coefs(ezfio_path):
     '''
         zips the files psi_coef and psi_det in the ezfio folder determinants 
     '''
-    dets_ezfio=ezfio_path+'/determinants/'
+    #dets_ezfio=ezfio_path+'/determinants/'
+    dets_ezfio = os.path.join(ezfio_path, 'determinants', '')
     #print('Zipping files ....')
     command = "gzip -n " + dets_ezfio + 'psi_coef'
     subprocess.run(command, shell=True)
@@ -19,7 +20,8 @@ def unzip_dets_coefs(ezfio_path):
     '''
         unzips the files psi_coef and psi_det in the determinants folder  in ezfio folder
     '''
-    dets_ezfio=ezfio_path+'/determinants/'
+    #dets_ezfio=ezfio_path+'/determinants/'
+    dets_ezfio = os.path.join(ezfio_path, 'determinants', '')
     #print('Unzipping files ....')
     command = "gzip -df " + dets_ezfio +'psi_coef.gz'
     subprocess.run(command, shell=True)
@@ -32,7 +34,8 @@ def write_det_num(ezfio_path):
     '''
         write the number of determinants in the file n_det in the determinants folder in ezfio folder
     '''
-    dets_ezfio=ezfio_path+'/determinants/'
+    #dets_ezfio=ezfio_path+'/determinants/'
+    dets_ezfio = os.path.join(ezfio_path, 'determinants', '')
     readed_det_qp = pd.read_csv(dets_ezfio + 'psi_det.gz', sep="\t", header=None,skiprows=2)
     n_det=str(len(readed_det_qp)//2)
     print('Number of dets in QP to diagonalize:',len(readed_det_qp)//2)
@@ -50,7 +53,8 @@ def write_det_num(ezfio_path):
 
 
 def modify_threshold_davidson(ezfio_path,threshold):
-    threshold_file=ezfio_path+'/davidson_keywords/threshold_davidson'
+    #threshold_file=ezfio_path+'/davidson_keywords/threshold_davidson'
+    threshold_file = os.path.join(ezfio_path, 'davidson_keywords', 'threshold_davidson')
 
     #convert for ex 1e-6 to '   1.000000000000000e-6'
     threshold_str='   '+ '1.000000000000000e'+str(threshold).split('e')[1]+'\n '
@@ -72,7 +76,8 @@ def reset_ezfio(qpsh_path,ezfio_path):
     #path_to_ezfio=ezfio_path+'/../' #eis necessary to go up one level so that qpsh can find the to_diagonalize.ezfio file
     ezfio_name=ezfio_path.split('/')[-1]
 
-    dets_ezfio=ezfio_path+'/determinants/'
+    #dets_ezfio=ezfio_path+'/determinants/'
+    dets_ezfio = os.path.join(ezfio_path, 'determinants', '')
     commands = "qp set_file "+ezfio_path+"\nqp reset --all |tee "+dets_ezfio+"qp.out\nqp unset_file "+ezfio_name+"\nexit\n"
 
     # start the subprocess
@@ -104,7 +109,8 @@ def scf(qpsh_path,ezfio_path):
 
     # commands to execute in the interactive shell
     #path_to_ezfio=ezfio_path+'/../' #is necessary to go up one level so that qpsh can find the to_diagonalize.ezfio file
-    dets_ezfio=ezfio_path+'/determinants/'
+    #dets_ezfio=ezfio_path+'/determinants/'
+    dets_ezfio = os.path.join(ezfio_path, 'determinants', '')
     ezfio_name=ezfio_path.split('/')[-1]
     #commands = "qp set_file "+path_to_ezfio+ezfio_name+"\nqp run scf |tee "+dets_ezfio+"qp.out\nqp unset_file "+ezfio_name+"\nexit\n"
     commands = "qp set_file "+ezfio_path+"\nqp run scf |tee "+dets_ezfio+"qp.out\nqp unset_file "+ezfio_name+"\nexit\n"
@@ -137,7 +143,8 @@ def cisd(qpsh_path,ezfio_path):
 
     # commands to execute in the interactive shell
     #path_to_ezfio=ezfio_path+'/../' 
-    dets_ezfio=ezfio_path+'/determinants/'
+    #dets_ezfio=ezfio_path+'/determinants/'
+    dets_ezfio = os.path.join(ezfio_path, 'determinants', '')
     ezfio_name=ezfio_path.split('/')[-1]
 
     commands = "qp set_file "+ezfio_path+"\nqp run cisd |tee "+dets_ezfio+"qp.out\nqp unset_file "+ezfio_name+"\nexit\n"
@@ -198,7 +205,8 @@ def diagonalization(qpsh_path,ezfio_path,timeout=5):
     process_completed = True
 
     #path_to_ezfio = ezfio_path + '/../'
-    dets_ezfio = ezfio_path + '/determinants/'
+    #dets_ezfio = ezfio_path + '/determinants/'
+    dets_ezfio = os.path.join(ezfio_path, 'determinants', '')
     ezfio_name = ezfio_path.split('/')[-1]
     commands = "qp set_file " + ezfio_path + "\nqp run diagonalize_h |tee " + dets_ezfio + "qp.out\nqp unset_file " + ezfio_name + "\nexit\n"
     #commands = "qp set_file " + path_to_ezfio + ezfio_name + "\nqp run diagonalize_h |tee " + dets_ezfio + "qp.out\nqp unset_file " + ezfio_name + "\nexit\n"
@@ -236,7 +244,8 @@ def get_num_mo(ezfio_path):
     '''
         returns the number of molecular orbitals in the file n_mo in the determinants folder in ezfio folder
     '''
-    dets_ezfio=ezfio_path+'/ao_basis/'
+    #dets_ezfio=ezfio_path+'/ao_basis/'
+    dets_ezfio = os.path.join(ezfio_path, 'ao_basis', '')
     with open(dets_ezfio + 'ao_num', 'r') as file:
         n_mo = file.read()
 
@@ -246,7 +255,8 @@ def get_num_electrons(ezfio_path):
     '''
         returns the number of electrons in the file n_elec in the determinants folder in ezfio folder
     '''
-    dets_ezfio=ezfio_path+'/electrons/'
+    #dets_ezfio=ezfio_path+'/electrons/'
+    dets_ezfio = os.path.join(ezfio_path, 'electrons', '')
     with open(dets_ezfio + 'elec_alpha_num', 'r') as file:
         n_elec = file.read()
 
