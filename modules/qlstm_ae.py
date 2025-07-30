@@ -138,10 +138,10 @@ def train_model(net, params,train_step,train_loader,epochs,lr=0.01):
             epoch_loss += loss
         epoch_loss /= len(train_loader)
         print(f"Epoch {epoch}, Loss: {epoch_loss}")
-    save_model(net, params, save_path="model_params.pkl")
+    save_model(net, params, save_path="weights/model_params.pkl")
     return net,params
 
-def save_model(model, params, save_path="model_params.pkl"):
+def save_model(model, params, save_path="weights/model_params.pkl"):
     """Save both model configuration and parameters."""
     to_save = {
         "params": params,
@@ -156,7 +156,7 @@ def save_model(model, params, save_path="model_params.pkl"):
     with open(save_path, "wb") as f:
         pickle.dump(to_save, f)
     print(f"Model parameters saved to {save_path}")
-def load_model(model_class, input_shape, param_path="model_params.pkl"):
+def load_model(model_class, input_shape, param_path="weights/model_params.pkl"):
     with open(param_path, "rb") as f:
         loaded = pickle.load(f)
     params = loaded["params"]
