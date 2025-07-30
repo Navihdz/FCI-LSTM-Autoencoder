@@ -125,10 +125,8 @@ def create_train_step(net, optimizer):
 def train_model(net, params,train_step,train_loader,epochs,lr=0.01):
     """Train the Quantum Autoencoder model."""
     print("Training the QLSTM Autoencoder...")
-    print("Model initialized")
     optimizer=optax.adam(lr)
     opt_state=optimizer.init(params)
-    print("Optimizer initialized")
     for epoch in range(epochs):
         epoch_loss = 0.0
         for data in train_loader:
@@ -155,7 +153,6 @@ def save_model(model, params, save_path="weights/model_params.pkl"):
     }
     with open(save_path, "wb") as f:
         pickle.dump(to_save, f)
-    print(f"Model parameters saved to {save_path}")
 def load_model(model_class, input_shape, param_path="weights/model_params.pkl"):
     with open(param_path, "rb") as f:
         loaded = pickle.load(f)
@@ -169,5 +166,4 @@ def load_model(model_class, input_shape, param_path="weights/model_params.pkl"):
         hidden_size=config["hidden_size"],
         target_size=config["target_size"]
     )
-    print(f"Pesos cargados desde {param_path}")
     return net, params

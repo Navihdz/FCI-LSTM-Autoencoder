@@ -118,7 +118,7 @@ def save_model(model, params, save_path="model_params.pkl"):
     """Save the model parameters to a file."""
     with open(save_path, "wb") as f:
         pickle.dump(params, f)
-    print(f"Model parameters saved to {save_path}")
+
 
 def load_model(input_shape, param_path="model_params.pkl"):
     net = QuantumAutoEncoder(input_size=input_shape)

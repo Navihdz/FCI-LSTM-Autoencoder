@@ -14,7 +14,7 @@
 
     Note: Make sure to replace 'qp_folder' with the actual path to your quantum package folder.
     """
-import os
+
 
 def formatting2qp(dets,ezfio_path):
     print('converting determinants to qp format and writing to files...')
@@ -40,38 +40,37 @@ def formatting2qp(dets,ezfio_path):
 
     
     #open file and append new coefficients == 0
-    
-    f = open(os.path.join(ezfio_path, 'determinants', 'psi_coef'), 'r')
+    f = open(ezfio_path+'/determinants/'+'psi_coef', 'a')
     for i in range(0,len(dets_decimal)//2):
         f.write(str('%24.15E'%0)+'\n')
     f.close()
 
 
     #Modify the second line of the coefficients file
-    f = open(os.path.join(ezfio_path, 'determinants', 'psi_coef'), 'r')
+    f = open(ezfio_path+'/determinants/'+'psi_coef', 'r')
     lines = f.readlines()
     f.close()
     numero_coefs=(len(lines)-2)
     spaces=20- len(str(numero_coefs))
     lines[1]=(" "*(spaces)+str(numero_coefs)+' '*20+'1'+ '\n')
-    f = open(os.path.join(ezfio_path, 'determinants', 'psi_coef'), 'w')
+    f = open(ezfio_path+'/determinants/'+'psi_coef', 'w')
     f.writelines(lines)
     f.close()
 
     #open file and append new decimal determinants
-    f = open(os.path.join(ezfio_path, 'determinants', 'psi_coef'), 'a')
+    f = open(ezfio_path+'/determinants/'+'psi_det', 'a')
     for i in range(0,len(dets_decimal)):
         f.write(dets_decimal[i]+'\n')
     f.close()
 
     #Modify the second line of the determinants file
-    f = open(os.path.join(ezfio_path, 'determinants', 'psi_coef'), 'r')
+    f = open(ezfio_path+'/determinants/'+'psi_det', 'r')
     lines = f.readlines()
     f.close()
     numero_dets=(len(lines)-2)//2
     numbers_spaces_dets_num=21-len(str(numero_dets))
     lines[1]=(" "*(19)+'1'+' '*(20)+'2'+' '*(numbers_spaces_dets_num)+str(numero_dets)+'\n')
-    f = open(os.path.join(ezfio_path, 'determinants', 'psi_coef'), 'w')
+    f = open(ezfio_path+'/determinants/'+'psi_det', 'w')
     f.writelines(lines)
     f.close()
 

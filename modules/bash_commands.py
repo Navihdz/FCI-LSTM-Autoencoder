@@ -33,7 +33,6 @@ def write_det_num(ezfio_path):
     dets_ezfio = os.path.join(ezfio_path, 'determinants', '')
     readed_det_qp = pd.read_csv(dets_ezfio + 'psi_det.gz', sep="\t", header=None,skiprows=2)
     n_det=str(len(readed_det_qp)//2)
-    print('Number of dets in QP to diagonalize:',len(readed_det_qp)//2)
 
     with open(dets_ezfio + 'n_det', 'w') as file:
         file.write(n_det)  # Escribe 'F' como nueva línea
@@ -97,8 +96,6 @@ def scf(qpsh_path,ezfio_path):
         runs the scf in the qpsh shell
     '''
     print('SCF started....')
-    print('EL EZFIO',ezfio_path)
-    print('EL QPSH',qpsh_path)
 
     # commands to execute in the interactive shell
     #path_to_ezfio=ezfio_path+'/../' #is necessary to go up one level so that qpsh can find the to_diagonalize.ezfio file
@@ -106,7 +103,7 @@ def scf(qpsh_path,ezfio_path):
     ezfio_name=ezfio_path.split('/')[-1]
     #commands = "qp set_file "+path_to_ezfio+ezfio_name+"\nqp run scf |tee "+dets_ezfio+"qp.out\nqp unset_file "+ezfio_name+"\nexit\n"
     commands = "qp set_file "+ezfio_path+"\nqp run scf |tee "+dets_ezfio+"qp.out\nqp unset_file "+ezfio_name+"\nexit\n"
-    print('Commands to execute in the interactive shell:',commands)
+    #print('Commands to execute in the interactive shell:',commands)
     # start the subprocess
     process = subprocess.Popen([qpsh_path], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
