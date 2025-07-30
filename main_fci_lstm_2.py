@@ -55,10 +55,13 @@ import jax
 
 #----------------------------------- Set the random seed for reproducibility-----------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-random.seed(0)
+
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
+random.seed(RANDOM_SEED)
+
+rng = jax.random.PRNGKey(42)
 
 
 class TimeSeriesDataset(Dataset):
@@ -123,25 +126,27 @@ def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False,qlst
     '''
 
     qp_folder=ezfio_path+'/determinants/'
+
     x_train=clean_data_qp.clean(qp_folder+'psi_det', qp_folder+'psi_coef',prune)
     x_train=np.array(x_train,dtype=np.float32)  #no entiendo porque se convierte a float32, pero sino da error si le pasas int64
     if quantum:
          if x_train.ndim == 2:
             train_data=jdl.ArrayDataset(x_train, x_train) #uno es el input y el otro es el target, pero como son iguales no importa
-            train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=4,shuffle=False,drop_last=True)
+            train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=4,shuffle=True,drop_last=True, rng=rng)
             return train_loader, x_train
 
     if qlstm:
          if x_train.ndim == 2:
+            print('x_train shape:',x_train.shape[1])
             x_train2 = np.expand_dims(x_train, axis=-1)
             print("Shape after expand_dims:", x_train.shape) 
             train_data=jdl.ArrayDataset(x_train2, x_train2) #uno es el input y el otro es el target, pero como son iguales no importa
-            train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=batch_size,shuffle=False,drop_last=True)
+            train_loader=jdl.DataLoader(train_data,backend='jax',batch_size=batch_size,shuffle=True,drop_last=True, rng=rng)
             return train_loader, x_train
 
     #convert the training dataset to a pytorch tensor
     so_vectors=torch.tensor(x_train)
-    seq_len=n_mo #the secuence length is the number of molecular orbitals
+    seq_len=x_train.shape[1] #the secuence length is the number of molecular orbitals
     features=1
     num_samples = len(so_vectors) 
     tensor_data = so_vectors[:num_samples * seq_len]
@@ -161,9 +166,6 @@ def get_and_clean_data(ezfio_path,prune, n_mo, batch_size=64, quantum=False,qlst
 
 
 def mutate_det_with_prob(visible_probs, dets_train):
-    import random
-    import numpy as np
-    import jax.numpy as jnp
 
     excitations = 2 if np.random.rand() <= 0.5 else 1
 
@@ -297,11 +299,15 @@ def det_generation(autoencoder,params,dets_train,dets_list,num_dets, n_mo, quant
     train_dec_set = set(int("".join(map(str, x[::-1])), 2) for x in dets_train) #usar set para hacer la busqueda mas rapida (de O(n) a O(1))
 
     #set the seed for each multiprocess
-    random.seed(os.getpid())
+    #random.seed(os.getpid())
     set_dets_list=set()
 
     #run until we have the number of determinants that fulfill the conditions of single and double substitutions
-    batch_size=num_dets//3
+    if num_dets > 2000000:
+        batch_size=500000
+    else:
+        batch_size=num_dets//3
+
     while len(dets_list) < num_dets:
         new_det_batch,output_probs = generate_batch_probs(autoencoder,params, dets_train, batch_size=batch_size, n_mo=n_mo, quantum=quantum,qlstm=qlstm)
         for det in new_det_batch:
@@ -524,11 +530,12 @@ def plot_DetDistribution2(determinantes, x_train,ezfio_name,iteration,ezfio_path
     
 
     posiciones = np.arange(len(frecuencias_1))
-    plt.figure(figsize=(18, 6))
+    
     posiciones = np.arange(len(frecuencias_1))
 
     #figure with 300 dpi
     plt.figure(dpi=300)
+    plt.figure(figsize=(18, 6))
 
     #plot each bar as a subplot
     plt.bar(posiciones, frecuencias_1, width=0.6, label='Generated Determinants', color='b', alpha=0.7)
@@ -664,6 +671,7 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
             - tol: tolerance for the convergence of the diagonalization
             - FCI_energy: FCI energy for the system (optional)
     '''
+    Initial_time = time.time()
     n_mo=bash_commands.get_num_mo(ezfio_path)
     ne=bash_commands.get_num_electrons(ezfio_path)
     print('Number of electrons:',ne )
@@ -697,9 +705,9 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
         if iteration==0:
             bash_commands.reset_ezfio(qpsh_path,ezfio_path)
             bash_commands.scf(qpsh_path,ezfio_path)
-            ground_energy_list.append(get_energy(ezfio_path,calculation='scf'))
+            #ground_energy_list.append(get_energy(ezfio_path,calculation='scf'))
             bash_commands.cisd(qpsh_path,ezfio_path)
-            ground_energy_list.append(get_energy(ezfio_path,calculation='cisd'))
+            #ground_energy_list.append(get_energy(ezfio_path,calculation='cisd'))
 
             #initialize the rbm here to not reset the weights in each iteration
             #model=lstm.lstm_initialization(n_mo,embedding_dim)
@@ -709,6 +717,7 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
             gc.collect()
             bash_commands.unzip_dets_coefs(ezfio_path)
             DataLoader, x_train = get_and_clean_data(ezfio_path, prune, n_mo, batch_size, qlstm=True)
+            n_mo=x_train.shape[1]
             autoencoder,params,train_step=qlstm_initialization(n_mo, n_qubits,embedding_dim,learning_rate)
             print('model initialized')
     
@@ -887,12 +896,12 @@ def main(working_directory,ezfio_path,qpsh_path,iterations=2,num_epochs=1, learn
 
     
 if __name__=='__main__':
-    Initial_time = time.time()
+    
     ##-----------------------------------examples to test the code-----------------------------------
     ##------------------------------------------------------------------------------------------------
     #set woking directory
-    #working_directory='/home/ivan/Descargas/Python_Codes_DFT/paper_code_implementation/lstm_fci'
-    working_directory='/home/sandra-juarez/Documentos/Doctorado/fci-autoencoder/FCI-LSTM-Autoencoder'
+    working_directory='/home/ivan/Descargas/Python_Codes_DFT/paper_code_implementation/lstm_fci'
+    #working_directory='/home/sandra-juarez/Documentos/Doctorado/fci-autoencoder/FCI-LSTM-Autoencoder'
 
     os.chdir(working_directory)
     
@@ -901,20 +910,22 @@ if __name__=='__main__':
 
     #path to the ezfio folder for the molecule------------------------
     #ezfio_path='/home/ivan/Descargas/solving_fci/to_diagonalize.ezfio' #c2 ccpvdz
-    # ezfio_path='/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio' #h2o 6-31g
-    ezfio_path='/home/sandra-juarez/Documentos/Doctorado/fci-autoencoder/FCI-LSTM-Autoencoder/QP_examples/h2o/h2o_631g.ezfio' #/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio'   #h2o 6-31g
+    ezfio_path='/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio' #h2o 6-31g
+    #ezfio_path='/home/sandra-juarez/Documentos/Doctorado/fci-autoencoder/FCI-LSTM-Autoencoder/QP_examples/h2o/h2o_631g.ezfio' #/home/ivan/Descargas/QP_examples/h2o/h2o_631g.ezfio'   #h2o 6-31g
     #ezfio_path='/home/ivan/Descargas/QP_examples/h2o/h2o_ccpvdz.ezfio'   #h2o ccpvdz
     #ezfio_path='/home/ivan/Descargas/QP_examples/c2/c2_631g.ezfio' #c2 6-31g
+    #ezfio_path='/home/ivan/Descargas/QP_examples/n2/n2_631g.ezfio' #n2 6-31g
+    #ezfio_path='/home/ivan/Descargas/QP_examples/n2/n2_ccpvdz.ezfio' #n2 ccpvdz
 
     #path to the Quantum Package qpsh---------------------------------
     #qpsh_path='/home/sandra-juarez/qp2/bin/qpsh'
-    #qpsh_path='/home/ivan/Descargas/qp2/bin/qpsh' 
-    qpsh_path='/home/sandra-juarez/qp2/bin/qpsh'
+    qpsh_path='/home/ivan/Descargas/qp2/bin/qpsh' 
+    #qpsh_path='/home/sandra-juarez/qp2/bin/qpsh'
     ezfio_name=ezfio_path.split('/')[-1]
 
     #primeras pruebas con times det num 20, max iter 10, aprox davidson 1e-10,1e-6, y 1e-8, prune 1e-8
-    max_iterations=2; num_epochs=2; learning_rate=0.001;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
-    batch_size=128; embedding_dim=16; n_qubits=4
+    max_iterations=4; num_epochs=1; learning_rate=0.0005;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
+    batch_size=64; embedding_dim=8; n_qubits=2
 
     #parametros que funcionaron bien en primera prueba qlstm
     #max_iterations=4; num_epochs=10; learning_rate=0.01;times_num_dets_gen=15;prune=1e-12;tol=1e-5; times_max_diag_time=10
@@ -928,6 +939,8 @@ if __name__=='__main__':
     #FCI_energy=-75.72984    #c2 ccpvdz
     #FCI_energy=-76.24195    #h2o ccpvdz
     #FCI_energy = -75.64418 #c2 6-31g
+    #FCI_energy = -109.10842 #n2 6-31g
+    #FCI_energy = -109.27834 #n2 ccpvdz
 
     #n_mo=26
     #DataLoader_1,x_train =get_and_clean_data(ezfio_path,prune, n_mo, batch_size)
