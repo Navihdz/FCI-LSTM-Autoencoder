@@ -23,18 +23,12 @@ class qlstm_autoencoder(nn.Module):
         self.weightsf=self.param('weightsf',nn.initializers.xavier_uniform(),(self.n_qlayers, self.n_qubits))
         self.weightsi=self.param('weightsi',nn.initializers.xavier_uniform(),(self.n_qlayers, self.n_qubits))
         self.weightsu=self.param('weightsu',nn.initializers.xavier_uniform(),(self.n_qlayers, self.n_qubits))
-        
         self.weightso=self.param('weightso',nn.initializers.xavier_uniform(),(self.n_qlayers, self.n_qubits))
         self.linear_f = nn.Dense(self.hidden_size)
         self.linear_i = nn.Dense(self.hidden_size)
         self.linear_u = nn.Dense(self.hidden_size)
         self.linear_o = nn.Dense(self.hidden_size)
         self.to_qubits = nn.Dense(self.n_qubits)
-
-        #self.weightsf=self.param('weightsf',nn.initializers.normal(),(self.n_qlayers, self.n_qubits))
-        #self.weightsi=self.param('weightsi',nn.initializers.normal(),(self.n_qlayers, self.n_qubits))
-        #self.weightsu=self.param('weightsu',nn.initializers.normal(),(self.n_qlayers, self.n_qubits))
-        #self.weightso=self.param('weightso',nn.initializers.normal(),(self.n_qlayers, self.n_qubits))
         self.qnode = self.make_qnode()
     def make_qnode(self):
         @qml.qnode(self.device, interface="jax", diff_method="backprop")
@@ -64,7 +58,6 @@ class qlstm_autoencoder(nn.Module):
             x_t = x[:, t, :] #x has shape (batch,seq_len,features)
             # Concatenate input and hidden state
             v_t = jnp.concatenate((h_t, x_t), axis=1)
-            
             # match qubit dimension
             y_t = self.to_qubits(v_t)
             #print('el shape de yt',y_t.shape
@@ -80,7 +73,6 @@ class qlstm_autoencoder(nn.Module):
         hidden_seq = hidden_seq.transpose(1, 0, 2)  #(batch_size,window,hidden)
         final_hidden_seq=hidden_seq[:, -1, :]
         #target=nn.Dense(ae_size)(final_hidden_seq)
-        
         return final_hidden_seq
 
     
@@ -133,45 +125,19 @@ def create_train_step(net, optimizer):
 def train_model(net, params,train_step,train_loader,epochs,lr=0.01):
     """Train the Quantum Autoencoder model."""
     print("Training the QLSTM Autoencoder...")
-    #net,params=qlstm_initialization(input_size)
     print("Model initialized")
     optimizer=optax.adam(lr)
     opt_state=optimizer.init(params)
-
-    #train_step = create_train_step(net, optimizer)
-
     print("Optimizer initialized")
-
-    '''
-    @jax.jit
-    def train_step(params,opt_state,inputs,targets):
-        print('train step')
-        def loss_fn(params,inputs,targets):
-            preds=net.apply(params,inputs)
-            loss = loss = jnp.mean((preds - targets) ** 2)
-            #-jnp.mean(targets * jnp.log(preds + 1e-7) + (1 - targets) * jnp.log(1 - preds + 1e-7))
-            #jax.debug.print(">>> preds mean: {}", jnp.mean(preds))
-            return loss
-        loss,grad=jax.value_and_grad(loss_fn)(params,inputs,targets)
-        updates, opt_state=optimizer.update(grad,opt_state)
-        new_params=optax.apply_updates(params,updates)
-        return loss, new_params, opt_state
-    '''
-    
     for epoch in range(epochs):
         epoch_loss = 0.0
         for data in train_loader:
             
             inputs, targets = data[0], data[1]
-            #print('el shape',inputs.shape,targets.shape)
-            #loss, params, opt_state = train_step(params, opt_state, inputs, targets)
             loss, params, opt_state = train_step(params, opt_state, inputs, targets)
             epoch_loss += loss
         epoch_loss /= len(train_loader)
-
         print(f"Epoch {epoch}, Loss: {epoch_loss}")
-    
-
     save_model(net, params, save_path="model_params.pkl")
     return net,params
 
