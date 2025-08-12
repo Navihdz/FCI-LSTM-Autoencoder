@@ -9,7 +9,7 @@ class Config:
 
     qpsh_path = '/home/ivan/Descargas/qp2/bin/qpsh'
     #qpsh path for DGX
-    #qpsh_path = '/home/qpackage/bin/qpsh'
+    #qpsh_path = '/home/qpackage/qp2/bin/qpsh'
 
     # Parameters
     max_iterations = 2
