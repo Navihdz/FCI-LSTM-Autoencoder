@@ -1,8 +1,15 @@
 class Config:
     # Paths
     working_directory = '/home/ivan/Descargas/Python_Codes_DFT/paper_code_implementation/lstm_fci'
+    #Working directory for DGX
+    #working_directory = '/raid/home/jorgehdztec/scripts/FCI-LSTM-Autoencoder/'
+
+
     ezfio_path = 'QP_examples/h2o/h2o_631g.ezfio'
+
     qpsh_path = '/home/ivan/Descargas/qp2/bin/qpsh'
+    #qpsh path for DGX
+    #qpsh_path = '/home/qpackage/bin/qpsh'
 
     # Parameters
     max_iterations = 2

@@ -1,5 +1,8 @@
 import subprocess
 import pandas as pd
+import subprocess
+import os
+import signal
 
 
 
@@ -156,11 +159,6 @@ def cisd(qpsh_path,ezfio_path):
 
 
 
-import subprocess
-import psutil
-import time
-import os
-import signal
 
 
 def diagonalization(qpsh_path,ezfio_path,timeout=5):
